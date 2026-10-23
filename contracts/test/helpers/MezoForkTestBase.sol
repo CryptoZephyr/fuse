@@ -5,8 +5,8 @@ import {TestBase} from "./TestBase.sol";
 import {IERC20, IERC20Permit, ITigrisRouter, ISkipOracle} from "../../src/interfaces/IMezo.sol";
 import {MezoTestnetAddresses} from "../../src/MezoTestnetAddresses.sol";
 
-/// @notice ERC-20 shim etched onto Mezo's BTC precompile (`0x7b7C000000000000000000000000000000000000`)
-///         during local Foundry fork tests so `revm` does not infinitely recurse on the precompile wrapper bytecode.
+// ERC-20 shim etched onto Mezo's BTC precompile (`0x7b7C000000000000000000000000000000000000`)
+// during local Foundry fork tests so `revm` does not infinitely recurse on the precompile wrapper bytecode.
 contract PrecompileBTCShim is IERC20 {
     string public constant name = "Bitcoin";
     string public constant symbol = "BTC";
@@ -46,7 +46,7 @@ contract PrecompileBTCShim is IERC20 {
     }
 }
 
-    /// @notice Skip Oracle shim etched onto `0x7b7c000000000000000000000000000000000015` during local Foundry fork tests.
+    // Skip Oracle shim etched onto `0x7b7c000000000000000000000000000000000015` during local Foundry fork tests.
     contract PrecompileSkipOracleShim is ISkipOracle {
         uint8 public constant override decimals = 8;
 
@@ -60,8 +60,7 @@ contract PrecompileBTCShim is IERC20 {
         }
     }
 
-    /// @title MezoForkTestBase
-    /// @notice Shared base contract for Mezo Testnet (`31611`) fork tests implementing the T0 Finding 3 decision.
+    // Shared base contract for Mezo Testnet (`31611`) fork tests implementing the T0 Finding 3 decision.
     abstract contract MezoForkTestBase is TestBase {
         bytes32 internal constant PERMIT_TYPEHASH =
             keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");

@@ -80,7 +80,7 @@ contract MockERC20Permit is IERC20, IERC20Permit {
     }
 }
 
-    /// @notice Token that deducts a 1% tax on `transferFrom` to verify `FuseRouter` rejects fee-on-transfer inputs.
+    // Token that deducts a 1% tax on `transferFrom` to verify `FuseRouter` rejects fee-on-transfer inputs.
     contract MockFeeOnTransferERC20 is MockERC20Permit {
         constructor() MockERC20Permit("Tax Token", "TAX") {}
 
@@ -98,7 +98,7 @@ contract MockERC20Permit is IERC20, IERC20Permit {
         }
     }
 
-    /// @notice Malicious token that attempts to re-enter `FuseRouter` during `transferFrom`.
+    // Malicious token that attempts to re-enter `FuseRouter` during `transferFrom`.
     contract MockReentrantERC20 is MockERC20Permit {
         FuseRouter public targetRouter;
         address public builder;
@@ -128,7 +128,7 @@ contract MockERC20Permit is IERC20, IERC20Permit {
         }
     }
 
-    /// @notice Mock Tigris Router with configurable exchange rate (`rateNumerator / rateDenominator`).
+    // Mock Tigris Router with configurable exchange rate (`rateNumerator / rateDenominator`).
     contract MockTigrisRouter is ITigrisRouter {
         uint256 public rateNumerator = 80_000;
         uint256 public rateDenominator = 1;
@@ -185,7 +185,7 @@ contract MockERC20Permit is IERC20, IERC20Permit {
         }
     }
 
-    /// @notice Mock MUSD Savings Vault (`MUSDSavingsRate` behavior: mints transferable `sMUSD` 1:1 to caller).
+    // Mock MUSD Savings Vault (`MUSDSavingsRate` behavior: mints transferable `sMUSD` 1:1 to caller).
     contract MockMUSDSavingsVault is MockERC20Permit, IMUSDSavingsVault {
         IERC20 public immutable asset;
 
@@ -207,7 +207,7 @@ contract MockERC20Permit is IERC20, IERC20Permit {
         }
     }
 
-    /// @notice Mock VeBTC enforcing Mezo's weekly epoch rounding and `maxLockTime`.
+    // Mock VeBTC enforcing Mezo's weekly epoch rounding and `maxLockTime`.
     contract MockVeBTC is IVeBTC {
         address public immutable override token;
         uint256 public constant WEEK = 1 weeks;
