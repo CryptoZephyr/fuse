@@ -1,0 +1,32 @@
+# Secrets & environment files
+.env
+.env.*
+!.env.example
+.env.txt
+*.env
+*.key
+*.pem
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Foundry / Solidity
+cache/
+out/
+broadcast/
+lcov.info
+
+# Next.js / Build outputs
+.next/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
