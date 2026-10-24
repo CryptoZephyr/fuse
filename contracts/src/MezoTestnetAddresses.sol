@@ -18,4 +18,8 @@ library MezoTestnetAddresses {
 
     /// @notice Testnet VeBTC `maxLockTime` (storage slot 82) is 30 days (2,592,000 seconds).
     uint256 internal constant TESTNET_MAX_LOCK_DURATION = 30 days;
+
+    /// @notice Deployed FuseRouter on Mezo Testnet (Gate A).
+    address internal constant FUSE_ROUTER = 0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1;
+    uint256 internal constant FUSE_ROUTER_DEPLOY_BLOCK = 16_328_764;
 }
