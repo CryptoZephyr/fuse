@@ -12,6 +12,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const CACHE_TTL_MS = 15_000;
+const MIN_REFRESH_INTERVAL_MS = 5_000;
 const snapshotCache = new Map<
   string,
   { timestamp: number; data: LeaderboardSnapshot }
@@ -51,7 +52,14 @@ export async function GET(request: NextRequest) {
 
     const cacheKey = `${actionFilter}:${sortBy}`;
     const cached = snapshotCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    const refresh = searchParams.get("refresh") === "true";
+    const cacheAge = cached ? Date.now() - cached.timestamp : null;
+    if (
+      cached &&
+      cacheAge !== null &&
+      cacheAge < CACHE_TTL_MS &&
+      (!refresh || cacheAge < MIN_REFRESH_INTERVAL_MS)
+    ) {
       return NextResponse.json(
         {
           ...cached.data,

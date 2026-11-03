@@ -24,7 +24,7 @@ export function useLeaderboard(options?: UseLeaderboardOptions) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchLeaderboard = useCallback(
-    async () => {
+    async (refresh = false) => {
       setIsLoading(true);
       setError(null);
       try {
@@ -32,6 +32,9 @@ export function useLeaderboard(options?: UseLeaderboardOptions) {
           action: actionFilter,
           sort: sortBy,
         });
+        if (refresh) {
+          params.set("refresh", "true");
+        }
         const res = await fetch(`/api/leaderboard?${params.toString()}`, {
           cache: "no-store",
         });
@@ -63,6 +66,6 @@ export function useLeaderboard(options?: UseLeaderboardOptions) {
     snapshot,
     isLoading,
     error,
-    refresh: () => fetchLeaderboard(),
+    refresh: () => fetchLeaderboard(true),
   };
 }
