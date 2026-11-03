@@ -20,7 +20,7 @@ export default function LeaderboardPage() {
     isLoading,
     error,
     refresh,
-  } = useLeaderboard();
+  } = useLeaderboard({ initialSort: "users" });
 
   const [selectedBuilder, setSelectedBuilder] = useState<string | null>(null);
   const [x402Preview, setX402Preview] = useState<Record<string, unknown> | null>(null);
@@ -185,6 +185,19 @@ export default function LeaderboardPage() {
                 {snapshot.totals.totalActions}
               </dd>
 
+              {snapshot.totals.excludedSelfReferralActions > 0 && (
+                <>
+                  <dt>Self-Referral Actions Excluded</dt>
+                  <dd data-fuse-summary="excluded-self-referral-actions">
+                    {snapshot.totals.excludedSelfReferralActions} self-referral{" "}
+                    {snapshot.totals.excludedSelfReferralActions === 1
+                      ? "action"
+                      : "actions"}{" "}
+                    excluded
+                  </dd>
+                </>
+              )}
+
               {snapshot.btcUsdOracle &&
                 snapshot.totals.totalVolumeUsdFormatted && (
                   <>
@@ -258,6 +271,12 @@ export default function LeaderboardPage() {
                       <td>
                         <strong>{row.name}</strong>{" "}
                         <span>(self-reported)</span>
+                        {row.isFuseTestBuilder && (
+                          <>
+                            {" "}
+                            <span>(Fuse test wallet)</span>
+                          </>
+                        )}
                         {row.metadata.url && (
                           <div>
                             <small>
@@ -286,6 +305,17 @@ export default function LeaderboardPage() {
                         <strong>{row.actionCount}</strong> (Swap:{" "}
                         {row.actionCounts.swap}, Save: {row.actionCounts.save},
                         Lock: {row.actionCounts.lock})
+                        {row.selfReferralActionCount > 0 && (
+                          <div>
+                            <small>
+                              {row.selfReferralActionCount} self-referral{" "}
+                              {row.selfReferralActionCount === 1
+                                ? "action"
+                                : "actions"}{" "}
+                              excluded
+                            </small>
+                          </div>
+                        )}
                       </td>
                       {snapshot.btcUsdOracle && (
                         <td>{row.totalVolumeUsdFormatted ?? "N/A"}</td>

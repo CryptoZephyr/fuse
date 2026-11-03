@@ -27,6 +27,7 @@ contract FuseRouterFuzzTest is TestBase {
         veBTC = new MockVeBTC(address(btc));
 
         router = new FuseRouter(
+            address(this),
             address(tigris),
             POOL_FACTORY,
             address(musd),

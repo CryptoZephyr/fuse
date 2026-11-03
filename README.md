@@ -32,7 +32,6 @@ fuse/
 ├── apps/
 │   ├── web/                # @fuse/web: Next.js App Router (/widget, /builders, /leaderboard, /docs, /api/leaderboard, /api/analytics/[builder])
 │   └── demo-builder/       # Partner demo app embedding Fuse with a registered builder code
-└── scripts/                # Verification and deployment helpers
 ```
 
 ### Core Protocol Features
@@ -145,3 +144,20 @@ pnpm --filter @fuse/web dev
 - **Documentation:** `http://localhost:3000/docs`
 - **Leaderboard JSON API:** `http://localhost:3000/api/leaderboard`
 - **Paid Builder Analytics (MUSD x402):** `http://localhost:3000/api/analytics/0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a`
+
+## 5. Owner Powers
+
+The immutable `FuseRouter` owner can pause and unpause routed actions and edit the swap input token allowlist. The owner cannot move funds, change fees, change Mezo protocol addresses, or block `revokeBuilder`, which continues to work while the router is paused. The router holds no balances between transactions.
+
+## 6. Deployment Note
+
+The live testnet router at `0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1` was deployed and Sourcify-verified from commit `f3615b6`, where the owner was the deployer. The explicit `_owner` constructor argument applies to the next deployment. The mainnet plan is to use a Safe multisig as owner. Safe 1.4.1 is deployed on Mezo and is used by Mezo Passport and OrangeKit.
+
+## 7. Leaderboard and Gauge Anti-Gaming
+
+The router remains permissionless. A self-referral only refunds the user's own fee, and Fuse takes no cut, so anti-gaming is handled at the metrics layer. Leaderboard metrics exclude events where `user == builder`, ranking uses unique users by default, and Fuse test wallets are labelled. Planned gauge rules include weighting saves and locks above swaps, setting minimum action sizes, and having a Fuse-controlled distributor review eligibility before payout.
+
+## 8. Environment Variables
+
+- `X402_PAY_TO` is required as a valid payee address for paid analytics at `/api/analytics/[builder]`. The endpoint fails closed when no valid payee is configured.
+- `FUSE_OWNER_ADDRESS` is required by the deployment script as the immutable router owner. Use a Safe multisig for a mainnet deployment.

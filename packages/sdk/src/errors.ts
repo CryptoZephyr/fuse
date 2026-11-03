@@ -1,5 +1,25 @@
-import { BaseError, ContractFunctionRevertedError, decodeErrorResult, type Hex } from "viem";
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  decodeErrorResult,
+  type Hash,
+  type Hex,
+} from "viem";
 import { fuseRouterAbi } from "./abis.js";
+
+export class FuseTransactionRevertedError extends Error {
+  readonly txHash: Hash;
+  readonly explorerUrl: string;
+  readonly step: string;
+
+  constructor(params: { txHash: Hash; explorerUrl: string; step: string }) {
+    super(`Transaction reverted during ${params.step}. View the reverted transaction: ${params.explorerUrl}`);
+    this.name = "FuseTransactionRevertedError";
+    this.txHash = params.txHash;
+    this.explorerUrl = params.explorerUrl;
+    this.step = params.step;
+  }
+}
 
 export type FuseErrorCode =
   | "USER_REJECTED"
@@ -77,6 +97,14 @@ function extractErrorString(error: unknown): string {
 }
 
 export function decodeFuseError(error: unknown): DecodedFuseError {
+  if (error instanceof FuseTransactionRevertedError) {
+    return {
+      code: "REVERTED",
+      message: error.message,
+      rawError: error,
+    };
+  }
+
   if (isUserRejectedError(error)) {
     return {
       code: "USER_REJECTED",

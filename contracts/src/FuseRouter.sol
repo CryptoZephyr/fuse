@@ -162,6 +162,7 @@ contract FuseRouter {
     // -------------------------------------------------------------------------
 
     constructor(
+        address _owner,
         address _tigrisRouter,
         address _poolFactory,
         address _musd,
@@ -172,14 +173,14 @@ contract FuseRouter {
         uint256 _maxLockDuration
     ) {
         if (
-            _tigrisRouter == address(0) || _poolFactory == address(0) || _musd == address(0) || _btc == address(0)
-                || _savingsVault == address(0) || _veBTC == address(0)
+            _owner == address(0) || _tigrisRouter == address(0) || _poolFactory == address(0) || _musd == address(0)
+                || _btc == address(0) || _savingsVault == address(0) || _veBTC == address(0)
         ) revert ZeroAddress();
         if (_maxLockDuration < MIN_LOCK_DURATION) {
             revert InvalidLockDuration(_maxLockDuration, MIN_LOCK_DURATION, type(uint256).max);
         }
 
-        owner = msg.sender;
+        owner = _owner;
         tigrisRouter = _tigrisRouter;
         poolFactory = _poolFactory;
         musd = _musd;

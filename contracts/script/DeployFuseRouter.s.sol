@@ -6,6 +6,7 @@ import {MezoTestnetAddresses} from "../src/MezoTestnetAddresses.sol";
 
 interface VmScript {
     function envUint(string calldata name) external view returns (uint256);
+    function envAddress(string calldata name) external view returns (address);
     function startBroadcast(uint256 privateKey) external;
     function stopBroadcast() external;
 }
@@ -16,10 +17,12 @@ contract DeployFuseRouter {
     VmScript internal constant vm = VmScript(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     function run() external returns (FuseRouter router) {
+        address ownerAddress = vm.envAddress("FUSE_OWNER_ADDRESS");
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         vm.startBroadcast(deployerKey);
 
         router = new FuseRouter(
+            ownerAddress,
             MezoTestnetAddresses.TIGRIS_ROUTER,
             MezoTestnetAddresses.POOL_FACTORY,
             MezoTestnetAddresses.MUSD,

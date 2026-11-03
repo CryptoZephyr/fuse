@@ -46,6 +46,7 @@ contract FuseRouterUnitTest is TestBase {
         veBTC = new MockVeBTC(address(btc));
 
         router = new FuseRouter(
+            ownerAddr,
             address(tigris),
             POOL_FACTORY,
             address(musd),
@@ -262,6 +263,55 @@ contract FuseRouterUnitTest is TestBase {
         // Unpause restores routing
         router.unpause();
         assertFalse(router.paused(), "router should be unpaused");
+    }
+
+    function test_OwnerIsExplicitConstructorArgument() public {
+        address configuredOwner = address(0xBEEF);
+        FuseRouter configuredRouter = new FuseRouter(
+            configuredOwner,
+            address(tigris),
+            POOL_FACTORY,
+            address(musd),
+            address(btc),
+            address(mezo),
+            address(savingsVault),
+            address(veBTC),
+            30 days
+        );
+
+        assertEq(configuredRouter.owner(), configuredOwner, "owner should match constructor argument");
+        assertTrue(configuredRouter.owner() != address(this), "owner should not be the deployer");
+    }
+
+    function test_OnlyOwnerCanPauseUnpauseAndSetAllowedInput() public {
+        address nonOwner = address(0xCAFE);
+
+        vm.prank(nonOwner);
+        vm.expectRevert(FuseRouter.Unauthorized.selector);
+        router.pause();
+
+        vm.prank(nonOwner);
+        vm.expectRevert(FuseRouter.Unauthorized.selector);
+        router.unpause();
+
+        vm.prank(nonOwner);
+        vm.expectRevert(FuseRouter.Unauthorized.selector);
+        router.setAllowedInput(address(mezo), false);
+    }
+
+    function test_ConstructorRejectsZeroOwner() public {
+        vm.expectRevert(FuseRouter.ZeroAddress.selector);
+        new FuseRouter(
+            address(0),
+            address(tigris),
+            POOL_FACTORY,
+            address(musd),
+            address(btc),
+            address(mezo),
+            address(savingsVault),
+            address(veBTC),
+            30 days
+        );
     }
 
     // -------------------------------------------------------------------------

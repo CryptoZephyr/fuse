@@ -409,11 +409,12 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
           </li>
           <li>
             <strong>With <code>PAYMENT-SIGNATURE</code> header:</strong> Verifies
-            and settles the signed MUSD Permit2 + EIP-2612 payment on Mezo
-            Testnet through <code>https://facilitator.vativ.io</code> and
-            returns <code>HTTP 200 OK</code> with the on-chain settlement
-            transaction hash (`PAYMENT-RESPONSE` header) and the complete
-            per-builder analytics report.
+            the signed MUSD Permit2 + EIP-2612 payment, computes analytics, then
+            settles on success through <code>https://facilitator.vativ.io</code>.
+            It returns <code>HTTP 200 OK</code> with the on-chain settlement
+            transaction hash (<code>PAYMENT-RESPONSE</code> header) and the
+            complete per-builder analytics report. Analytics failures do not
+            settle the payment.
           </li>
         </ul>
         <pre data-fuse-doc-snippet="x402">
@@ -444,8 +445,69 @@ console.log("x402 Settlement Tx:", x402.explorerUrl);`}</code>
 
       <hr />
 
+      <section aria-label="Owner Powers" data-fuse-section="owner-powers">
+        <h2>6. Owner Powers and Deployment Note</h2>
+        <p>
+          The immutable <code>FuseRouter</code> owner can pause and unpause
+          routed actions and edit the swap input token allowlist. The owner
+          cannot move funds, change fees, change Mezo protocol addresses, or
+          block <code>revokeBuilder</code>, which works while the router is
+          paused. The router holds no balances between transactions.
+        </p>
+        <p>
+          The live testnet router at{" "}
+          <code>0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1</code> was deployed
+          and Sourcify-verified from commit <code>f3615b6</code>, where the
+          owner was the deployer. The explicit <code>_owner</code> constructor
+          argument applies to the next deployment. The mainnet plan is to use a
+          Safe multisig as owner. Safe 1.4.1 is deployed on Mezo and is used by
+          Mezo Passport and OrangeKit.
+        </p>
+      </section>
+
+      <hr />
+
+      <section
+        aria-label="Leaderboard and Gauge Anti-Gaming"
+        data-fuse-section="anti-gaming"
+      >
+        <h2>7. Leaderboard and Gauge Anti-Gaming</h2>
+        <p>
+          The router remains permissionless. A self-referral only refunds the
+          user&apos;s own fee, and Fuse takes no cut, so anti-gaming is handled
+          at the metrics layer. Leaderboard metrics exclude events where{" "}
+          <code>user == builder</code>, ranking uses unique users by default,
+          and Fuse test wallets are labelled.
+        </p>
+        <p>
+          Planned gauge rules include weighting saves and locks above swaps,
+          setting minimum action sizes, and having a Fuse-controlled distributor
+          review eligibility before payout.
+        </p>
+      </section>
+
+      <hr />
+
+      <section aria-label="Environment Variables" data-fuse-section="env">
+        <h2>8. Environment Variables</h2>
+        <ul>
+          <li>
+            <code>X402_PAY_TO</code> is required as a valid payee address for
+            paid analytics at <code>/api/analytics/[builder]</code>. The
+            endpoint fails closed when no valid payee is configured.
+          </li>
+          <li>
+            <code>FUSE_OWNER_ADDRESS</code> is required by the deployment
+            script as the immutable router owner. Use a Safe multisig for a
+            mainnet deployment.
+          </li>
+        </ul>
+      </section>
+
+      <hr />
+
       <section aria-label="Security Notes" data-fuse-section="security">
-        <h2>6. Security Architecture</h2>
+        <h2>9. Security Architecture</h2>
         <ul>
           <li>
             <strong>Zero Retained Funds:</strong> <code>FuseRouter</code> never

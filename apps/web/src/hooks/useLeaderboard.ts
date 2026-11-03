@@ -17,22 +17,24 @@ export function useLeaderboard(options?: UseLeaderboardOptions) {
     options?.initialAction ?? "all",
   );
   const [sortBy, setSortBy] = useState<LeaderboardSortBy>(
-    options?.initialSort ?? "volumeUsd",
+    options?.initialSort ?? "users",
   );
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchLeaderboard = useCallback(
-    async (forceRefresh = false) => {
+    async (refresh = false) => {
       setIsLoading(true);
       setError(null);
       try {
         const params = new URLSearchParams({
           action: actionFilter,
           sort: sortBy,
-          ...(forceRefresh ? { refresh: "true" } : {}),
         });
+        if (refresh) {
+          params.set("refresh", "true");
+        }
         const res = await fetch(`/api/leaderboard?${params.toString()}`, {
           cache: "no-store",
         });
@@ -53,7 +55,7 @@ export function useLeaderboard(options?: UseLeaderboardOptions) {
   );
 
   useEffect(() => {
-    void fetchLeaderboard(false);
+    void fetchLeaderboard();
   }, [fetchLeaderboard]);
 
   return {
