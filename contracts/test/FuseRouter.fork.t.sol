@@ -25,6 +25,7 @@ contract FuseRouterForkTest is MezoForkTestBase {
         _mintTestnetBTC(user, 1 ether);
 
         router = new FuseRouter(
+            address(this),
             MezoTestnetAddresses.TIGRIS_ROUTER,
             MezoTestnetAddresses.POOL_FACTORY,
             MezoTestnetAddresses.MUSD,
