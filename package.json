@@ -17,8 +17,9 @@
     "contracts:test": "forge test --root contracts -vv",
     "contracts:test:fork": "forge test --root contracts --match-path test/FuseRouter.fork.t.sol --fork-url https://rpc.test.mezo.org -vv",
     "contracts:fmt": "forge fmt --root contracts --check",
-    "build": "pnpm --recursive --if-present build",
-    "test": "pnpm contracts:test && pnpm --recursive --if-present test",
-    "typecheck": "pnpm --recursive --if-present typecheck"
+    "build": "pnpm --filter @fuse/sdk build && pnpm --filter @fuse/web build",
+    "test:packages": "pnpm --recursive --if-present test",
+    "test": "pnpm contracts:test && pnpm test:packages",
+    "typecheck": "pnpm --filter @fuse/sdk build && pnpm --recursive --if-present typecheck"
   }
 }

@@ -39,7 +39,7 @@ jobs:
         run: forge test --match-path "test/FuseRouter.fork.t.sol" --fork-url https://rpc.test.mezo.org -vv
 
   workspace:
-    name: Workspace Packages
+    name: Workspace Packages (SDK & Web Widget)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -48,7 +48,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,3 +63,6 @@ jobs:
 
       - name: Typecheck workspace packages
         run: pnpm typecheck
+
+      - name: Run SDK & Widget tests
+        run: pnpm test:packages

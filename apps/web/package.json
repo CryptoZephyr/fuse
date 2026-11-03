@@ -1,0 +1,32 @@
+{
+  "name": "@fuse/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fuse web app and embeddable Mezo builder widget (plain unstyled per DESIGN_SYSTEM.md)",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fuse/sdk": "workspace:*",
+    "@mezo-org/passport": "^0.17.2",
+    "@rainbow-me/rainbowkit": "^2.2.0",
+    "@tanstack/react-query": "^5.60.0",
+    "next": "14.2.25",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "viem": "^2.22.8",
+    "wagmi": "^2.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.0"
+  }
+}

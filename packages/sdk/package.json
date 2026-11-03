@@ -1,0 +1,33 @@
+{
+  "name": "@fuse/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for FuseRouter on Mezo Testnet (quotes, transaction builders, MUSD permit flows, Skip BTC/USD oracle, builder approvals)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:live": "vitest run test/sdk.live.test.ts"
+  },
+  "dependencies": {
+    "viem": "^2.22.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.0"
+  }
+}
