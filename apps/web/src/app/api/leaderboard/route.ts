@@ -53,6 +53,9 @@ export async function GET(request: NextRequest) {
     const cacheKey = `${actionFilter}:${sortBy}`;
     const cached = snapshotCache.get(cacheKey);
     const refresh = searchParams.get("refresh") === "true";
+    const cacheControl = refresh
+      ? "no-store"
+      : "public, s-maxage=15, stale-while-revalidate=30";
     const cacheAge = cached ? Date.now() - cached.timestamp : null;
     if (
       cached &&
@@ -68,7 +71,7 @@ export async function GET(request: NextRequest) {
         {
           status: 200,
           headers: {
-            "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+            "Cache-Control": cacheControl,
           },
         },
       );
@@ -106,7 +109,7 @@ export async function GET(request: NextRequest) {
         {
           status: 200,
           headers: {
-            "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+            "Cache-Control": cacheControl,
           },
         },
       );
