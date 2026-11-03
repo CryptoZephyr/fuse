@@ -11,6 +11,7 @@ import {
   type FuseAddresses,
   MEZO_TESTNET_ADDRESSES,
   MEZO_TOKENS,
+  FUSE_TEST_WALLETS,
   getExplorerAddressUrl,
 } from "./addresses.js";
 import {
@@ -81,6 +82,8 @@ export interface LeaderboardBuilderRow {
   feePercentFormatted: string;
   uniqueUsers: number;
   actionCount: number;
+  selfReferralActionCount: number;
+  isFuseTestBuilder: boolean;
   actionCounts: {
     swap: number;
     save: number;
@@ -118,6 +121,7 @@ export interface LeaderboardSnapshot {
     activeBuilders: number;
     uniqueUsers: number;
     totalActions: number;
+    excludedSelfReferralActions: number;
     totalVolumeUsd: number | null;
     totalVolumeUsdFormatted: string | null;
     totalFeesUsd: number | null;
@@ -334,7 +338,7 @@ export interface GetLeaderboardSnapshotParameters {
 export async function getLeaderboardSnapshot({
   publicClient,
   actionFilter = "all",
-  sortBy = "volumeUsd",
+  sortBy = "users",
   fromBlock,
   toBlock = "latest",
   addresses = MEZO_TESTNET_ADDRESSES,
@@ -390,17 +394,27 @@ export async function getLeaderboardSnapshot({
     }),
   );
 
+  const selfReferralEvents = allRoutedEvents.filter(
+    (ev) => ev.user.toLowerCase() === ev.builder.toLowerCase(),
+  );
+  const nonSelfReferralEvents = allRoutedEvents.filter(
+    (ev) => ev.user.toLowerCase() !== ev.builder.toLowerCase(),
+  );
   const filteredEvents =
     actionFilter === "all"
-      ? allRoutedEvents
-      : allRoutedEvents.filter((ev) => ev.action === actionFilter);
+      ? nonSelfReferralEvents
+      : nonSelfReferralEvents.filter((ev) => ev.action === actionFilter);
+  const excludedSelfReferralEvents =
+    actionFilter === "all"
+      ? selfReferralEvents
+      : selfReferralEvents.filter((ev) => ev.action === actionFilter);
 
   const globalUsers = new Set<string>();
   let globalVolumeUsd = 0;
   let globalFeesUsd = 0;
 
   const rows: LeaderboardBuilderRow[] = builderConfigs.map((cfg) => {
-    const builderAllEvents = allRoutedEvents.filter(
+    const builderAllEvents = nonSelfReferralEvents.filter(
       (ev) => ev.builder.toLowerCase() === cfg.address.toLowerCase(),
     );
     const builderFilteredEvents = filteredEvents.filter(
@@ -467,6 +481,12 @@ export async function getLeaderboardSnapshot({
       feePercentFormatted: formatFeeBps(cfg.feeBps),
       uniqueUsers: uniqueUserSet.size,
       actionCount: builderFilteredEvents.length,
+      selfReferralActionCount: excludedSelfReferralEvents.filter(
+        (ev) => ev.builder.toLowerCase() === cfg.address.toLowerCase(),
+      ).length,
+      isFuseTestBuilder: FUSE_TEST_WALLETS.some(
+        (wallet) => wallet.toLowerCase() === cfg.address.toLowerCase(),
+      ),
       actionCounts,
       volumeByToken,
       feesByToken,
@@ -513,6 +533,7 @@ export async function getLeaderboardSnapshot({
       activeBuilders: builderConfigs.filter((b) => b.active).length,
       uniqueUsers: globalUsers.size,
       totalActions: filteredEvents.length,
+      excludedSelfReferralActions: excludedSelfReferralEvents.length,
       totalVolumeUsd: globalVolumeUsd,
       totalVolumeUsdFormatted: formatUsd(globalVolumeUsd),
       totalFeesUsd: globalFeesUsd,

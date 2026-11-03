@@ -126,6 +126,11 @@ export const DEFAULT_PAID_BUILDER_TESTNET: Address =
   "0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a";
 export const DEFAULT_ZERO_FEE_BUILDER_TESTNET: Address =
   "0x637A41a27e14897E72D3f9e488D4D33090DABEde";
+export const FUSE_TEST_WALLETS: readonly Address[] = [
+  DEFAULT_PAID_BUILDER_TESTNET,
+  DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+  "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0",
+] as const;
 
 export function getExplorerTxUrl(txHash: string, explorerUrl = MEZO_TESTNET_EXPLORER_URL): string {
   return `${explorerUrl.replace(/\/$/, "")}/tx/${txHash}`;

@@ -28,11 +28,11 @@ const ROUTED_EVENT = parseAbiItem(
   "event Routed(address indexed builder, address indexed user, uint8 indexed action, address tokenIn, uint256 amountIn, uint256 fee, address tokenOut, uint256 amountOut, uint256 lockId)",
 );
 
-export function mapActionCodeToType(actionCode: number): FuseActionType {
+export function mapActionCodeToType(actionCode: number): FuseActionType | null {
   if (actionCode === 0) return "swap";
   if (actionCode === 1) return "save";
   if (actionCode === 2) return "lock";
-  return "swap";
+  return null;
 }
 
 export interface GetRoutedEventsParameters {
@@ -81,14 +81,16 @@ export async function getRoutedEvents({
 
     for (const log of logs) {
       if (!log.args.builder || !log.args.user || !log.transactionHash) continue;
-      const actionCode = Number(log.args.action ?? 0);
+      const actionCode = Number(log.args.action);
+      const action = mapActionCodeToType(actionCode);
+      if (!action) continue;
       allLogs.push({
         transactionHash: log.transactionHash,
         blockNumber: log.blockNumber ?? 0n,
         logIndex: Number(log.logIndex ?? 0),
         builder: log.args.builder,
         user: log.args.user,
-        action: mapActionCodeToType(actionCode),
+        action,
         actionCode,
         tokenIn: log.args.tokenIn!,
         amountIn: log.args.amountIn ?? 0n,

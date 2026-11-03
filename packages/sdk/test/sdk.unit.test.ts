@@ -3,7 +3,9 @@ import { encodeErrorResult, parseUnits } from "viem";
 import {
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+  FUSE_TEST_WALLETS,
   FuseClient,
+  FuseTransactionRevertedError,
   LOCK_DURATION_PRESETS,
   MEZO_TESTNET_ADDRESSES,
   MIN_LOCK_DURATION_SECONDS,
@@ -20,6 +22,9 @@ import {
   estimateTokenUsdValue,
   formatFeeBps,
   formatUsd,
+  getLeaderboardSnapshot,
+  getRoutedEvents,
+  mapActionCodeToType,
   fuseRouterAbi,
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
@@ -28,6 +33,10 @@ import {
   buildX402PaymentRequired,
   decodeX402Header,
   encodeX402Header,
+  settleX402Payment,
+  verifyAndSettleX402Payment,
+  verifyX402Payment,
+  type X402PaymentPayload,
 } from "../src/index.js";
 
 describe("@fuse/sdk unit tests", () => {
@@ -273,6 +282,214 @@ describe("@fuse/sdk unit tests", () => {
     expect(steps).toContain("confirmed");
   });
 
+  it("throws FuseTransactionRevertedError when a routed action receipt is reverted", async () => {
+    const txHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const steps: string[] = [];
+    const mockPublicClient = {
+      readContract: vi.fn().mockResolvedValue(parseUnits("10", 18)),
+      estimateGas: vi.fn().mockResolvedValue(200_000n),
+      waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "reverted" }),
+    } as any;
+    const mockWalletClient = {
+      account: { address: "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0" },
+      chain: null,
+      sendTransaction: vi.fn().mockResolvedValue(txHash),
+    } as any;
+    const client = new FuseClient({
+      publicClient: mockPublicClient,
+      walletClient: mockWalletClient,
+    });
+
+    let thrown: unknown;
+    try {
+      await client.executeSave({
+        builder: DEFAULT_PAID_BUILDER_TESTNET,
+        amount: parseUnits("5", 18),
+        onStep: (step) => steps.push(step),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(FuseTransactionRevertedError);
+    expect(thrown).toMatchObject({
+      txHash,
+      explorerUrl: expect.stringContaining(txHash),
+      step: "save",
+    });
+    expect(decodeFuseError(thrown).message).toContain("Transaction reverted during save");
+    expect(steps).not.toContain("confirmed");
+  });
+
+  it("does not submit a transaction when gas estimation reports an execution revert", async () => {
+    const revert = new Error("execution reverted: BuilderNotRegistered");
+    const mockPublicClient = {
+      estimateGas: vi.fn().mockRejectedValue(revert),
+      waitForTransactionReceipt: vi.fn(),
+    } as any;
+    const sendTransaction = vi.fn();
+    const mockWalletClient = {
+      account: { address: "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0" },
+      chain: null,
+      sendTransaction,
+    } as any;
+    const client = new FuseClient({
+      publicClient: mockPublicClient,
+      walletClient: mockWalletClient,
+    });
+
+    await expect(
+      client.approveBuilder({
+        builder: DEFAULT_PAID_BUILDER_TESTNET,
+        maxFeeBps: 15,
+      }),
+    ).rejects.toBe(revert);
+    expect(sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("excludes leaderboard self-referrals and flags Fuse test wallets", async () => {
+    const testWallet = "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0";
+    const eventLog = (
+      builder: string,
+      user: string,
+      action: number,
+      amountIn: bigint,
+      fee: bigint,
+      logIndex: number,
+    ) => ({
+      transactionHash: `0x${logIndex.toString(16).padStart(64, "0")}`,
+      blockNumber: 100n,
+      logIndex,
+      args: {
+        builder,
+        user,
+        action,
+        tokenIn: MEZO_TESTNET_ADDRESSES.musd,
+        amountIn,
+        fee,
+        tokenOut: MEZO_TESTNET_ADDRESSES.btc,
+        amountOut: amountIn,
+        lockId: 0n,
+      },
+    });
+    const mockPublicClient = {
+      getLogs: vi.fn().mockImplementation(({ event }: { event: { name: string } }) =>
+        event.name === "BuilderRegistered"
+          ? [
+              {
+                args: {
+                  builder: DEFAULT_PAID_BUILDER_TESTNET,
+                  feeBps: 15,
+                  metadataURI: "",
+                },
+              },
+              {
+                args: { builder: testWallet, feeBps: 0, metadataURI: "" },
+              },
+            ]
+          : [
+              eventLog(
+                DEFAULT_PAID_BUILDER_TESTNET,
+                DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+                1,
+                parseUnits("10", 18),
+                parseUnits("0.1", 18),
+                0,
+              ),
+              eventLog(
+                DEFAULT_PAID_BUILDER_TESTNET,
+                DEFAULT_PAID_BUILDER_TESTNET,
+                0,
+                parseUnits("100", 18),
+                parseUnits("1", 18),
+                1,
+              ),
+              eventLog(
+                testWallet,
+                DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+                0,
+                parseUnits("2", 18),
+                0n,
+                2,
+              ),
+              eventLog(
+                DEFAULT_PAID_BUILDER_TESTNET,
+                DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+                7,
+                parseUnits("50", 18),
+                0n,
+                3,
+              ),
+            ],
+      ),
+      readContract: vi.fn().mockImplementation(({ functionName }: { functionName: string }) => {
+        if (functionName === "builders") return [15n, true, true, ""];
+        return Promise.reject(new Error("Oracle unavailable"));
+      }),
+    } as any;
+
+    const snapshot = await getLeaderboardSnapshot({
+      publicClient: mockPublicClient,
+      fromBlock: 100n,
+      toBlock: 100n,
+    });
+
+    const paidBuilder = snapshot.builders.find(
+      (row) => row.builder.toLowerCase() === DEFAULT_PAID_BUILDER_TESTNET.toLowerCase(),
+    );
+    const testBuilder = snapshot.builders.find(
+      (row) => row.builder.toLowerCase() === testWallet.toLowerCase(),
+    );
+
+    expect(snapshot.sortBy).toBe("users");
+    expect(snapshot.totals.totalActions).toBe(2);
+    expect(snapshot.totals.uniqueUsers).toBe(1);
+    expect(snapshot.totals.excludedSelfReferralActions).toBe(1);
+    expect(paidBuilder).toMatchObject({
+      uniqueUsers: 1,
+      actionCount: 1,
+      selfReferralActionCount: 1,
+      isFuseTestBuilder: true,
+      actionCounts: { swap: 0, save: 1, lock: 0 },
+      volumeByToken: { MUSD: { rawWei: parseUnits("10", 18).toString() } },
+      feesByToken: { MUSD: { rawWei: parseUnits("0.1", 18).toString() } },
+    });
+    expect(testBuilder?.isFuseTestBuilder).toBe(true);
+    expect(FUSE_TEST_WALLETS).toContain(DEFAULT_PAID_BUILDER_TESTNET);
+  });
+
+  it("skips routed logs with unknown action codes", async () => {
+    const mockPublicClient = {
+      getLogs: vi.fn().mockResolvedValue([
+        {
+          transactionHash: `0x${"1".repeat(64)}`,
+          blockNumber: 100n,
+          logIndex: 0,
+          args: {
+            builder: DEFAULT_PAID_BUILDER_TESTNET,
+            user: DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+            action: 8,
+            tokenIn: MEZO_TESTNET_ADDRESSES.musd,
+            amountIn: 1n,
+            fee: 0n,
+            tokenOut: MEZO_TESTNET_ADDRESSES.btc,
+            amountOut: 1n,
+            lockId: 0n,
+          },
+        },
+      ]),
+    } as any;
+
+    expect(mapActionCodeToType(8)).toBeNull();
+    await expect(
+      getRoutedEvents({
+        publicClient: mockPublicClient,
+        fromBlock: 100n,
+        toBlock: 100n,
+      }),
+    ).resolves.toEqual([]);
+  });
+
   it("builds and encodes MUSD x402 v2 payment required headers accurately", () => {
     const { paymentRequired, paymentRequirements, headerValue } = buildX402PaymentRequired({
       resourceUrl: "https://fuse.mezo.org/api/analytics/0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a",
@@ -289,5 +506,92 @@ describe("@fuse/sdk unit tests", () => {
     expect(decoded.x402Version).toBe(2);
     expect(decoded.accepts[0].payTo).toBe(DEFAULT_PAID_BUILDER_TESTNET);
     expect(encodeX402Header(decoded)).toBe(headerValue);
+  });
+
+  it("verifies x402 payments separately from settlement using matching facilitator bodies", async () => {
+    const { paymentRequirements } = buildX402PaymentRequired({
+      resourceUrl: "https://fuse.mezo.org/api/analytics/0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a",
+      payTo: DEFAULT_PAID_BUILDER_TESTNET,
+    });
+    const paymentPayload = {
+      x402Version: 2,
+      accepted: paymentRequirements,
+      payload: {
+        signature: "0x",
+        permit2Authorization: {},
+      },
+    } as unknown as X402PaymentPayload;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ isValid: true, payer: DEFAULT_ZERO_FEE_BUILDER_TESTNET }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          payer: DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+          transaction: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          network: "eip155:31611",
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const params = {
+      paymentPayload,
+      paymentRequirements,
+      facilitatorUrl: "https://facilitator.example/",
+    };
+    const verifyResult = await verifyX402Payment(params);
+    expect(verifyResult.isValid).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://facilitator.example/verify");
+
+    const settlement = await settleX402Payment(params);
+    expect(settlement.settleResult.success).toBe(true);
+    expect(settlement.paymentResponseHeader).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://facilitator.example/settle");
+    expect(fetchMock.mock.calls[0][1]?.body).toBe(fetchMock.mock.calls[1][1]?.body);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps verifyAndSettleX402Payment as a verify-then-settle wrapper", async () => {
+    const { paymentRequirements } = buildX402PaymentRequired({
+      resourceUrl: "https://fuse.mezo.org/api/analytics/0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a",
+      payTo: DEFAULT_PAID_BUILDER_TESTNET,
+    });
+    const paymentPayload = {
+      x402Version: 2,
+      accepted: paymentRequirements,
+      payload: { signature: "0x", permit2Authorization: {} },
+    } as unknown as X402PaymentPayload;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ isValid: true }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          transaction: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          network: "eip155:31611",
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await verifyAndSettleX402Payment({
+      paymentPayload,
+      paymentRequirements,
+      facilitatorUrl: "https://facilitator.example",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.verifyResult.isValid).toBe(true);
+    expect(result.settleResult.success).toBe(true);
+    expect(result.paymentResponseHeader).toBeTruthy();
+
+    vi.unstubAllGlobals();
   });
 });

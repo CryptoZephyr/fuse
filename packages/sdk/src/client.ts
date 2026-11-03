@@ -6,6 +6,9 @@ import {
   type PublicClient,
   type TransactionReceipt,
   type WalletClient,
+  BaseError,
+  ContractFunctionRevertedError,
+  ExecutionRevertedError,
   encodeFunctionData,
 } from "viem";
 import { erc20PermitAbi, fuseRouterAbi } from "./abis.js";
@@ -19,7 +22,10 @@ import {
   getExplorerTxUrl,
 } from "./addresses.js";
 import { type BuilderStatus, getBuilderStatus } from "./builders.js";
-import { isUnsupportedMethodError } from "./errors.js";
+import {
+  FuseTransactionRevertedError,
+  isUnsupportedMethodError,
+} from "./errors.js";
 import { type RoutedEventRecord, getRoutedEvents } from "./events.js";
 import { type BtcUsdOraclePrice, getBtcUsdPrice } from "./oracle.js";
 import {
@@ -62,6 +68,25 @@ export interface ActionExecutionResult {
   receipt: TransactionReceipt;
   explorerUrl: string;
   usedPermit: boolean;
+}
+
+function isExecutionRevert(error: unknown): boolean {
+  if (
+    error instanceof BaseError &&
+    error.walk(
+      (cause) =>
+        cause instanceof ExecutionRevertedError ||
+        cause instanceof ContractFunctionRevertedError,
+    )
+  ) {
+    return true;
+  }
+
+  const message =
+    error instanceof Error
+      ? `${error.name} ${error.message} ${(error as { shortMessage?: string }).shortMessage ?? ""}`
+      : String(error);
+  return /\bexecution reverted\b|\breverted?\b|\brevert(?:ed)?\s*[:(]/i.test(message);
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +388,8 @@ export class FuseClient {
       // Add 25% buffer and enforce >= 150,000 floor to avoid EIP-7623 gas floor issues on Mezo Testnet RPC
       const buffered = (estimated * 125n) / 100n;
       gas = buffered > 150_000n ? buffered : 150_000n;
-    } catch {
+    } catch (error) {
+      if (isExecutionRevert(error)) throw error;
       gas = fallbackGasLimit;
     }
 
@@ -375,6 +401,21 @@ export class FuseClient {
       value: built.value,
       gas,
     });
+  }
+
+  private async waitForSuccessfulReceipt(
+    txHash: Hash,
+    step: string,
+  ): Promise<TransactionReceipt> {
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+      throw new FuseTransactionRevertedError({
+        txHash,
+        explorerUrl: getExplorerTxUrl(txHash),
+        step,
+      });
+    }
+    return receipt;
   }
 
   // -------------------------------------------------------------------------
@@ -477,7 +518,7 @@ export class FuseClient {
   }): Promise<{ txHash: Hash; receipt: TransactionReceipt }> {
     const built = buildRegisterBuilderTx(params, this.addresses);
     const txHash = await this.sendBuiltTransaction(built, 250_000n);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "builder registration");
     return { txHash, receipt };
   }
 
@@ -486,7 +527,7 @@ export class FuseClient {
   }): Promise<{ txHash: Hash; receipt: TransactionReceipt }> {
     const built = buildSetFeeTx(params, this.addresses);
     const txHash = await this.sendBuiltTransaction(built, 200_000n);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "builder fee update");
     return { txHash, receipt };
   }
 
@@ -495,7 +536,7 @@ export class FuseClient {
   }): Promise<{ txHash: Hash; receipt: TransactionReceipt }> {
     const built = buildSetActiveTx(params, this.addresses);
     const txHash = await this.sendBuiltTransaction(built, 200_000n);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "builder status update");
     return { txHash, receipt };
   }
 
@@ -504,7 +545,7 @@ export class FuseClient {
   }): Promise<{ txHash: Hash; receipt: TransactionReceipt }> {
     const built = buildSetMetadataURITx(params, this.addresses);
     const txHash = await this.sendBuiltTransaction(built, 250_000n);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "builder metadata update");
     return { txHash, receipt };
   }
 
@@ -514,7 +555,7 @@ export class FuseClient {
   }): Promise<{ txHash: Hash; receipt: TransactionReceipt; explorerUrl: string }> {
     const built = buildApproveBuilderTx(params, this.addresses);
     const txHash = await this.sendBuiltTransaction(built, 200_000n);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "builder approval");
     return {
       txHash,
       receipt,
@@ -527,7 +568,7 @@ export class FuseClient {
   }): Promise<{ txHash: Hash; receipt: TransactionReceipt; explorerUrl: string }> {
     const built = buildRevokeBuilderTx(params, this.addresses);
     const txHash = await this.sendBuiltTransaction(built, 200_000n);
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "builder revocation");
     return {
       txHash,
       receipt,
@@ -559,7 +600,7 @@ export class FuseClient {
         500_000n,
       );
       onStep?.("action_tx_confirming");
-      const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+      const receipt = await this.waitForSuccessfulReceipt(txHash, "save");
       onStep?.("confirmed");
       return {
         txHash,
@@ -591,7 +632,7 @@ export class FuseClient {
           550_000n,
         );
         onStep?.("action_tx_confirming");
-        const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+        const receipt = await this.waitForSuccessfulReceipt(txHash, "save");
         onStep?.("confirmed");
         return {
           txHash,
@@ -623,7 +664,7 @@ export class FuseClient {
         200_000n,
       );
       onStep?.("token_approval_confirming");
-      await this.publicClient.waitForTransactionReceipt({ hash: approvalTxHash });
+      await this.waitForSuccessfulReceipt(approvalTxHash, "save token approval");
     }
 
     onStep?.("action_tx_pending");
@@ -632,7 +673,7 @@ export class FuseClient {
       500_000n,
     );
     onStep?.("action_tx_confirming");
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "save");
     onStep?.("confirmed");
     return {
       txHash,
@@ -688,7 +729,7 @@ export class FuseClient {
         600_000n,
       );
       onStep?.("action_tx_confirming");
-      const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+      const receipt = await this.waitForSuccessfulReceipt(txHash, "swap");
       onStep?.("confirmed");
       return {
         txHash,
@@ -723,7 +764,7 @@ export class FuseClient {
           650_000n,
         );
         onStep?.("action_tx_confirming");
-        const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+        const receipt = await this.waitForSuccessfulReceipt(txHash, "swap");
         onStep?.("confirmed");
         return {
           txHash,
@@ -753,7 +794,7 @@ export class FuseClient {
         200_000n,
       );
       onStep?.("token_approval_confirming");
-      await this.publicClient.waitForTransactionReceipt({ hash: approvalTxHash });
+      await this.waitForSuccessfulReceipt(approvalTxHash, "swap token approval");
     }
 
     onStep?.("action_tx_pending");
@@ -762,7 +803,7 @@ export class FuseClient {
       600_000n,
     );
     onStep?.("action_tx_confirming");
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "swap");
     onStep?.("confirmed");
     return {
       txHash,
@@ -806,7 +847,7 @@ export class FuseClient {
         200_000n,
       );
       onStep?.("token_approval_confirming");
-      await this.publicClient.waitForTransactionReceipt({ hash: approvalTxHash });
+      await this.waitForSuccessfulReceipt(approvalTxHash, "lock token approval");
     }
 
     onStep?.("action_tx_pending");
@@ -815,7 +856,7 @@ export class FuseClient {
       750_000n,
     );
     onStep?.("action_tx_confirming");
-    const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await this.waitForSuccessfulReceipt(txHash, "lock");
     onStep?.("confirmed");
     return {
       txHash,

@@ -9,7 +9,6 @@ import {
 } from "viem";
 import { erc20PermitAbi } from "./abis.js";
 import {
-  DEFAULT_PAID_BUILDER_TESTNET,
   MEZO_TESTNET_ADDRESSES,
   MEZO_TESTNET_CHAIN_ID,
   getExplorerTxUrl,
@@ -176,8 +175,8 @@ function generateRandom256BitNonce(): bigint {
   return BigInt(`0x${hex}`);
 }
 
-export function buildX402PaymentRequirements(params?: {
-  payTo?: Address;
+export function buildX402PaymentRequirements(params: {
+  payTo: Address;
   amount?: string;
   asset?: Address;
   network?: string;
@@ -188,7 +187,7 @@ export function buildX402PaymentRequirements(params?: {
     network: params?.network ?? MEZO_TESTNET_X402_NETWORK,
     amount: params?.amount ?? DEFAULT_X402_ANALYTICS_PRICE_MUSD,
     asset: getAddress(params?.asset ?? MEZO_TESTNET_ADDRESSES.musd),
-    payTo: getAddress(params?.payTo ?? DEFAULT_PAID_BUILDER_TESTNET),
+    payTo: getAddress(params.payTo),
     maxTimeoutSeconds: params?.maxTimeoutSeconds ?? 600,
     extra: {
       name: "Mezo USD",
@@ -201,7 +200,7 @@ export function buildX402PaymentRequirements(params?: {
 export function buildX402PaymentRequired(params: {
   resourceUrl: string;
   description?: string;
-  payTo?: Address;
+  payTo: Address;
   amount?: string;
   asset?: Address;
   network?: string;
@@ -399,21 +398,36 @@ export interface VerifyAndSettleX402PaymentParameters {
   facilitatorUrl?: string;
 }
 
-export async function verifyAndSettleX402Payment({
-  paymentPayload,
-  paymentRequirements,
-  facilitatorUrl = MEZO_TESTNET_X402_FACILITATOR_URL,
-}: VerifyAndSettleX402PaymentParameters): Promise<{
-  verifyResult: X402VerifyResponse;
-  settleResult: X402SettleResponse;
-  paymentResponseHeader: string;
-}> {
-  const cleanFacilitator = facilitatorUrl.replace(/\/$/, "");
-  const requestBody = JSON.stringify({
+export interface VerifyX402PaymentParameters {
+  paymentPayload: X402PaymentPayload;
+  paymentRequirements: X402PaymentRequirements;
+  facilitatorUrl?: string;
+}
+
+export interface SettleX402PaymentParameters {
+  paymentPayload: X402PaymentPayload;
+  paymentRequirements: X402PaymentRequirements;
+  facilitatorUrl?: string;
+}
+
+function buildX402FacilitatorRequestBody(
+  paymentPayload: X402PaymentPayload,
+  paymentRequirements: X402PaymentRequirements,
+): string {
+  return JSON.stringify({
     x402Version: 2,
     paymentPayload,
     paymentRequirements,
   });
+}
+
+export async function verifyX402Payment({
+  paymentPayload,
+  paymentRequirements,
+  facilitatorUrl = MEZO_TESTNET_X402_FACILITATOR_URL,
+}: VerifyX402PaymentParameters): Promise<X402VerifyResponse> {
+  const cleanFacilitator = facilitatorUrl.replace(/\/$/, "");
+  const requestBody = buildX402FacilitatorRequestBody(paymentPayload, paymentRequirements);
 
   const verifyRes = await fetch(`${cleanFacilitator}/verify`, {
     method: "POST",
@@ -435,6 +449,19 @@ export async function verifyAndSettleX402Payment({
     );
   }
 
+  return verifyResult;
+}
+
+export async function settleX402Payment({
+  paymentPayload,
+  paymentRequirements,
+  facilitatorUrl = MEZO_TESTNET_X402_FACILITATOR_URL,
+}: SettleX402PaymentParameters): Promise<{
+  settleResult: X402SettleResponse;
+  paymentResponseHeader: string;
+}> {
+  const cleanFacilitator = facilitatorUrl.replace(/\/$/, "");
+  const requestBody = buildX402FacilitatorRequestBody(paymentPayload, paymentRequirements);
   const settleRes = await fetch(`${cleanFacilitator}/settle`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -460,8 +487,30 @@ export async function verifyAndSettleX402Payment({
   }
 
   return {
-    verifyResult,
     settleResult,
     paymentResponseHeader: encodeX402Header(settleResult),
   };
+}
+
+export async function verifyAndSettleX402Payment({
+  paymentPayload,
+  paymentRequirements,
+  facilitatorUrl = MEZO_TESTNET_X402_FACILITATOR_URL,
+}: VerifyAndSettleX402PaymentParameters): Promise<{
+  verifyResult: X402VerifyResponse;
+  settleResult: X402SettleResponse;
+  paymentResponseHeader: string;
+}> {
+  const verifyResult = await verifyX402Payment({
+    paymentPayload,
+    paymentRequirements,
+    facilitatorUrl,
+  });
+  const settlement = await settleX402Payment({
+    paymentPayload,
+    paymentRequirements,
+    facilitatorUrl,
+  });
+
+  return { verifyResult, ...settlement };
 }
