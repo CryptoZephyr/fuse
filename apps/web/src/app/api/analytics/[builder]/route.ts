@@ -1,16 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { type Address, createPublicClient, getAddress, http, isAddress } from "viem";
 import {
-  DEFAULT_PAID_BUILDER_TESTNET,
+  type Address,
+  createPublicClient,
+  formatUnits,
+  getAddress,
+  http,
+  isAddress,
+} from "viem";
+import {
   DEFAULT_X402_ANALYTICS_PRICE_MUSD,
+  MEZO_TESTNET_ADDRESSES,
   MEZO_TESTNET_CHAIN,
   MEZO_TESTNET_RPC_URL,
   MEZO_TESTNET_X402_FACILITATOR_URL,
+  fuseRouterAbi,
   type X402PaymentPayload,
   buildX402PaymentRequired,
   decodeX402Header,
   getBuilderAnalytics,
-  verifyAndSettleX402Payment,
+  settleX402Payment,
+  verifyX402Payment,
 } from "@fuse/sdk";
 
 export const dynamic = "force-dynamic";
@@ -32,120 +41,183 @@ export async function GET(
   }
 
   const builderAddress = getAddress(rawBuilder);
-  const payToAddress: Address =
-    process.env.X402_PAY_TO_ADDRESS && isAddress(process.env.X402_PAY_TO_ADDRESS)
-      ? getAddress(process.env.X402_PAY_TO_ADDRESS)
-      : DEFAULT_PAID_BUILDER_TESTNET;
-
-  const facilitatorUrl =
-    process.env.X402_FACILITATOR_URL || MEZO_TESTNET_X402_FACILITATOR_URL;
-
-  const { paymentRequirements, paymentRequired, headerValue } =
-    buildX402PaymentRequired({
-      resourceUrl: request.url,
-      description: `Fuse Paid Builder Analytics Report for ${builderAddress}`,
-      payTo: payToAddress,
-      amount: DEFAULT_X402_ANALYTICS_PRICE_MUSD,
-    });
-
-  const paymentHeader =
-    request.headers.get("payment-signature") ||
-    request.headers.get("PAYMENT-SIGNATURE") ||
-    request.headers.get("x-payment") ||
-    request.headers.get("X-PAYMENT");
-
-  // 1. No payment header -> HTTP 402 Payment Required with MUSD x402 v2 requirements
-  if (!paymentHeader) {
-    return NextResponse.json(paymentRequired, {
-      status: 402,
-      headers: {
-        "PAYMENT-REQUIRED": headerValue,
-        "Access-Control-Expose-Headers":
-          "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
-      },
-    });
-  }
-
-  // 2. Payment header present -> decode, verify & settle via x402 facilitator, then return analytics
-  let paymentPayload: X402PaymentPayload;
-  try {
-    paymentPayload = decodeX402Header<X402PaymentPayload>(paymentHeader);
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error: "INVALID_X402_PAYMENT_HEADER",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Could not decode PAYMENT-SIGNATURE / X-PAYMENT header.",
-      },
-      { status: 400 },
-    );
-  }
+  const rpcUrl = process.env.NEXT_PUBLIC_MEZO_RPC_URL || MEZO_TESTNET_RPC_URL;
+  const publicClient = createPublicClient({
+    chain: MEZO_TESTNET_CHAIN,
+    transport: http(rpcUrl, { timeout: 25_000 }),
+  });
 
   try {
-    const { verifyResult, settleResult, paymentResponseHeader } =
-      await verifyAndSettleX402Payment({
-        paymentPayload,
-        paymentRequirements,
-        facilitatorUrl,
+    const builderConfig = await publicClient.readContract({
+      address: MEZO_TESTNET_ADDRESSES.fuseRouter,
+      abi: fuseRouterAbi,
+      functionName: "builders",
+      args: [builderAddress],
+    });
+    if (!builderConfig[2]) {
+      return NextResponse.json({ error: "BUILDER_NOT_REGISTERED" }, { status: 404 });
+    }
+
+    const configuredPayTo = process.env.X402_PAY_TO;
+    const legacyPayTo = process.env.X402_PAY_TO_ADDRESS;
+    const payToAddress: Address | null =
+      configuredPayTo && isAddress(configuredPayTo)
+        ? getAddress(configuredPayTo)
+        : legacyPayTo && isAddress(legacyPayTo)
+          ? getAddress(legacyPayTo)
+          : null;
+
+    if (!payToAddress) {
+      return NextResponse.json(
+        {
+          error: "X402_NOT_CONFIGURED",
+          message: "Set X402_PAY_TO to a valid payee address before enabling paid analytics.",
+        },
+        { status: 503 },
+      );
+    }
+
+    const facilitatorUrl =
+      process.env.X402_FACILITATOR_URL || MEZO_TESTNET_X402_FACILITATOR_URL;
+    const { paymentRequirements, paymentRequired, headerValue } =
+      buildX402PaymentRequired({
+        resourceUrl: request.url,
+        description: `Fuse Paid Builder Analytics Report for ${builderAddress}`,
+        payTo: payToAddress,
+        amount: DEFAULT_X402_ANALYTICS_PRICE_MUSD,
       });
 
-    const rpcUrl = process.env.NEXT_PUBLIC_MEZO_RPC_URL || MEZO_TESTNET_RPC_URL;
-    const publicClient = createPublicClient({
-      chain: MEZO_TESTNET_CHAIN,
-      transport: http(rpcUrl, { timeout: 25_000 }),
-    });
+    const paymentHeader =
+      request.headers.get("payment-signature") ||
+      request.headers.get("PAYMENT-SIGNATURE") ||
+      request.headers.get("x-payment") ||
+      request.headers.get("X-PAYMENT");
 
-    const analytics = await getBuilderAnalytics({
-      publicClient,
-      builder: builderAddress,
-    });
-
-    return NextResponse.json(
-      {
-        x402: {
-          settled: true,
-          facilitatorUrl,
-          network: settleResult.network,
-          amountMusd: "0.05",
-          amountWei: paymentRequirements.amount,
-          payTo: paymentRequirements.payTo,
-          payer: settleResult.payer ?? verifyResult.payer,
-          transaction: settleResult.transaction,
-          explorerUrl: settleResult.explorerUrl,
-        },
-        analytics,
-      },
-      {
-        status: 200,
-        headers: {
-          "PAYMENT-RESPONSE": paymentResponseHeader,
-          "X-PAYMENT-RESPONSE": paymentResponseHeader,
-          "Access-Control-Expose-Headers":
-            "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
-        },
-      },
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to verify or settle MUSD x402 payment.";
-    return NextResponse.json(
-      {
-        error: "X402_SETTLEMENT_FAILED",
-        message,
-        paymentRequired,
-      },
-      {
+    if (!paymentHeader) {
+      return NextResponse.json(paymentRequired, {
         status: 402,
         headers: {
           "PAYMENT-REQUIRED": headerValue,
           "Access-Control-Expose-Headers":
             "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
         },
-      },
+      });
+    }
+
+    let paymentPayload: X402PaymentPayload;
+    try {
+      paymentPayload = decodeX402Header<X402PaymentPayload>(paymentHeader);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: "INVALID_X402_PAYMENT_HEADER",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not decode PAYMENT-SIGNATURE / X-PAYMENT header.",
+        },
+        { status: 400 },
+      );
+    }
+
+    let verifyResult;
+    try {
+      verifyResult = await verifyX402Payment({
+        paymentPayload,
+        paymentRequirements,
+        facilitatorUrl,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to verify MUSD x402 payment.";
+      return NextResponse.json(
+        { error: "X402_VERIFICATION_FAILED", message, paymentRequired },
+        {
+          status: 402,
+          headers: {
+            "PAYMENT-REQUIRED": headerValue,
+            "Access-Control-Expose-Headers":
+              "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
+          },
+        },
+      );
+    }
+
+    let analytics;
+    try {
+      analytics = await getBuilderAnalytics({
+        publicClient,
+        builder: builderAddress,
+      });
+    } catch {
+      return NextResponse.json(
+        {
+          error: "ANALYTICS_UNAVAILABLE",
+          message: "Builder analytics are temporarily unavailable. No payment was settled.",
+        },
+        { status: 503 },
+      );
+    }
+
+    try {
+      const { settleResult, paymentResponseHeader } = await settleX402Payment({
+        paymentPayload,
+        paymentRequirements,
+        facilitatorUrl,
+      });
+
+      return NextResponse.json(
+        {
+          x402: {
+            settled: true,
+            facilitatorUrl,
+            network: settleResult.network,
+            amountMusd: formatUnits(BigInt(paymentRequirements.amount), 18),
+            amountWei: paymentRequirements.amount,
+            payTo: paymentRequirements.payTo,
+            payer: settleResult.payer ?? verifyResult.payer,
+            transaction: settleResult.transaction,
+            explorerUrl: settleResult.explorerUrl,
+          },
+          analytics,
+        },
+        {
+          status: 200,
+          headers: {
+            "PAYMENT-RESPONSE": paymentResponseHeader,
+            "X-PAYMENT-RESPONSE": paymentResponseHeader,
+            "Access-Control-Expose-Headers":
+              "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
+          },
+        },
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to settle MUSD x402 payment.";
+      return NextResponse.json(
+        {
+          error: "X402_SETTLEMENT_FAILED",
+          message,
+          paymentRequired,
+        },
+        {
+          status: 402,
+          headers: {
+            "PAYMENT-REQUIRED": headerValue,
+            "Access-Control-Expose-Headers":
+              "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
+          },
+        },
+      );
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to check builder registration.";
+    return NextResponse.json(
+      { error: "BUILDER_LOOKUP_FAILED", message },
+      { status: 503 },
     );
   }
 }

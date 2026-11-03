@@ -16,6 +16,7 @@ const snapshotCache = new Map<
   string,
   { timestamp: number; data: LeaderboardSnapshot }
 >();
+const inFlightScans = new Map<string, Promise<LeaderboardSnapshot>>();
 
 const VALID_ACTIONS = new Set<LeaderboardActionFilter>([
   "all",
@@ -34,8 +35,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const rawAction = (searchParams.get("action") ?? "all").toLowerCase();
-    const rawSort = searchParams.get("sort") ?? "volumeUsd";
-    const forceRefresh = searchParams.get("refresh") === "true";
+    const rawSort = searchParams.get("sort") ?? "users";
 
     const actionFilter: LeaderboardActionFilter = VALID_ACTIONS.has(
       rawAction as LeaderboardActionFilter,
@@ -47,11 +47,11 @@ export async function GET(request: NextRequest) {
       rawSort as LeaderboardSortBy,
     )
       ? (rawSort as LeaderboardSortBy)
-      : "volumeUsd";
+      : "users";
 
     const cacheKey = `${actionFilter}:${sortBy}`;
     const cached = snapshotCache.get(cacheKey);
-    if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return NextResponse.json(
         {
           ...cached.data,
@@ -66,35 +66,47 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const rpcUrl = process.env.NEXT_PUBLIC_MEZO_RPC_URL || MEZO_TESTNET_RPC_URL;
-    const publicClient = createPublicClient({
-      chain: MEZO_TESTNET_CHAIN,
-      transport: http(rpcUrl, { timeout: 25_000 }),
-    });
+    let scanPromise = inFlightScans.get(cacheKey);
+    if (!scanPromise) {
+      scanPromise = (async () => {
+        const rpcUrl = process.env.NEXT_PUBLIC_MEZO_RPC_URL || MEZO_TESTNET_RPC_URL;
+        const publicClient = createPublicClient({
+          chain: MEZO_TESTNET_CHAIN,
+          transport: http(rpcUrl, { timeout: 25_000 }),
+        });
+        const snapshot = await getLeaderboardSnapshot({
+          publicClient,
+          actionFilter,
+          sortBy,
+        });
+        snapshotCache.set(cacheKey, {
+          timestamp: Date.now(),
+          data: snapshot,
+        });
+        return snapshot;
+      })();
+      inFlightScans.set(cacheKey, scanPromise);
+    }
 
-    const snapshot = await getLeaderboardSnapshot({
-      publicClient,
-      actionFilter,
-      sortBy,
-    });
-
-    snapshotCache.set(cacheKey, {
-      timestamp: Date.now(),
-      data: snapshot,
-    });
-
-    return NextResponse.json(
-      {
-        ...snapshot,
-        cached: false,
-      },
-      {
-        status: 200,
-        headers: {
-          "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+    try {
+      const snapshot = await scanPromise;
+      return NextResponse.json(
+        {
+          ...snapshot,
+          cached: false,
         },
-      },
-    );
+        {
+          status: 200,
+          headers: {
+            "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+          },
+        },
+      );
+    } finally {
+      if (inFlightScans.get(cacheKey) === scanPromise) {
+        inFlightScans.delete(cacheKey);
+      }
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to load leaderboard snapshot";
