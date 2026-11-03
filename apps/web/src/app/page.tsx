@@ -31,21 +31,50 @@ export default function HomePage() {
         </p>
       </header>
 
-      <nav aria-label="Surface Links">
+      <nav aria-label="Surface Links" data-fuse-nav="primary">
         <ul>
           <li>
             <Link
               href={`/widget?builder=${DEFAULT_PAID_BUILDER_TESTNET}&action=swap`}
             >
-              Embeddable Widget — Paid Builder (15 bps / 0.15%)
+              Embeddable Widget (/widget) — Paid Builder (15 bps / 0.15%)
             </Link>
           </li>
           <li>
             <Link
               href={`/widget?builder=${DEFAULT_ZERO_FEE_BUILDER_TESTNET}&action=save`}
             >
-              Embeddable Widget — Zero-Fee Attribution Builder (0 bps / 0.00%)
+              Embeddable Widget (/widget) — Zero-Fee Attribution Builder (0 bps / 0.00%)
             </Link>
+          </li>
+          <li>
+            <Link href="/builders">
+              Builders Console (/builders) — Register, Manage Fees, Embed Snippets &amp; x402 Analytics
+            </Link>
+          </li>
+          <li>
+            <Link href="/leaderboard">
+              Builder Leaderboard (/leaderboard) — Live On-Chain Attribution &amp; Skip BTC/USD Valuation
+            </Link>
+          </li>
+          <li>
+            <Link href="/docs">
+              Documentation (/docs) — Quickstart, @fuse/sdk Reference &amp; FuseRouter Specs
+            </Link>
+          </li>
+          <li>
+            <a href="/api/leaderboard" target="_blank" rel="noopener noreferrer">
+              Leaderboard JSON API (/api/leaderboard)
+            </a>
+          </li>
+          <li>
+            <a
+              href={`/api/analytics/${DEFAULT_PAID_BUILDER_TESTNET}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Paid Analytics x402 API (/api/analytics/{DEFAULT_PAID_BUILDER_TESTNET})
+            </a>
           </li>
         </ul>
       </nav>

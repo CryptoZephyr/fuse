@@ -6,4 +6,6 @@ export * from "./permit.js";
 export * from "./builders.js";
 export * from "./quotes.js";
 export * from "./events.js";
+export * from "./leaderboard.js";
+export * from "./x402.js";
 export * from "./client.js";

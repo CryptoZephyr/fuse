@@ -8,6 +8,8 @@ import {
   MEZO_TESTNET_CHAIN,
   MEZO_TESTNET_RPC_URL,
   MIN_LOCK_DURATION_SECONDS,
+  getBuilderAnalytics,
+  getLeaderboardSnapshot,
 } from "../src/index.js";
 
 describe("@fuse/sdk live Mezo Testnet integration tests", () => {
@@ -98,4 +100,31 @@ describe("@fuse/sdk live Mezo Testnet integration tests", () => {
     expect(actions.has("save")).toBe(true);
     expect(actions.has("lock")).toBe(true);
   }, 25_000);
+
+  it("aggregates live leaderboard snapshot and per-builder analytics with Skip BTC/USD valuation", async () => {
+    const [leaderboard, analytics] = await Promise.all([
+      getLeaderboardSnapshot({
+        publicClient,
+        fromBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
+        toBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock + 1000n,
+      }),
+      getBuilderAnalytics({
+        publicClient,
+        builder: DEFAULT_PAID_BUILDER_TESTNET,
+        fromBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
+        toBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock + 1000n,
+      }),
+    ]);
+
+    expect(leaderboard.builders.length).toBeGreaterThanOrEqual(2);
+    expect(leaderboard.totals.totalActions).toBeGreaterThanOrEqual(6);
+    expect(leaderboard.btcUsdOracle).not.toBeNull();
+    expect(leaderboard.builders[0].selfReported).toBe(true);
+
+    expect(analytics.builder).toBe(DEFAULT_PAID_BUILDER_TESTNET);
+    expect(analytics.registered).toBe(true);
+    expect(analytics.feeBps).toBe(15);
+    expect(analytics.summary.totalActions).toBeGreaterThanOrEqual(5);
+    expect(analytics.events.length).toBeGreaterThanOrEqual(5);
+  }, 30_000);
 });

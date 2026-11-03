@@ -25,6 +25,9 @@ import {
   isTaprootAddress,
   parseBuilderMetadataURI,
   previewVeBtcUnlockTime,
+  buildX402PaymentRequired,
+  decodeX402Header,
+  encodeX402Header,
 } from "../src/index.js";
 
 describe("@fuse/sdk unit tests", () => {
@@ -268,5 +271,23 @@ describe("@fuse/sdk unit tests", () => {
     expect(steps).toContain("permit_fallback_to_approve");
     expect(steps).toContain("token_approval_pending");
     expect(steps).toContain("confirmed");
+  });
+
+  it("builds and encodes MUSD x402 v2 payment required headers accurately", () => {
+    const { paymentRequired, paymentRequirements, headerValue } = buildX402PaymentRequired({
+      resourceUrl: "https://fuse.mezo.org/api/analytics/0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a",
+      payTo: DEFAULT_PAID_BUILDER_TESTNET,
+    });
+
+    expect(paymentRequired.x402Version).toBe(2);
+    expect(paymentRequirements.network).toBe("eip155:31611");
+    expect(paymentRequirements.asset).toBe(MEZO_TESTNET_ADDRESSES.musd);
+    expect(paymentRequirements.extra.assetTransferMethod).toBe("permit2");
+    expect(paymentRequired.extensions.eip2612GasSponsoring).toBeDefined();
+
+    const decoded = decodeX402Header<typeof paymentRequired>(headerValue);
+    expect(decoded.x402Version).toBe(2);
+    expect(decoded.accepts[0].payTo).toBe(DEFAULT_PAID_BUILDER_TESTNET);
+    expect(encodeX402Header(decoded)).toBe(headerValue);
   });
 });

@@ -9,7 +9,11 @@ function WidgetSurfaceContent() {
   const searchParams = useSearchParams();
   const builderParam =
     searchParams.get("builder") || DEFAULT_PAID_BUILDER_TESTNET;
-  const actionParam = (searchParams.get("action") || "swap").toLowerCase();
+  const actionParam = (
+    searchParams.get("action") ||
+    searchParams.get("tab") ||
+    "swap"
+  ).toLowerCase();
   const defaultAction: FuseActionType =
     actionParam === "save" || actionParam === "lock" ? actionParam : "swap";
 
