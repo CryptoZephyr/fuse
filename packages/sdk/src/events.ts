@@ -1,4 +1,4 @@
-import { type Address, type Hash, type PublicClient, parseAbiItem } from "viem";
+import { type Address, type Hash, type PublicClient, getAddress, parseAbiItem } from "viem";
 import {
   type FuseAddresses,
   MEZO_TESTNET_ADDRESSES,
@@ -47,6 +47,33 @@ export interface GetRoutedEventsParameters {
   chunkSize?: bigint;
 }
 
+type RouterDeployment = FuseAddresses["fuseRouterDeployments"][number];
+
+export function resolveRouterDeployments({
+  addresses = MEZO_TESTNET_ADDRESSES,
+  router,
+  fromBlock,
+}: {
+  addresses?: FuseAddresses;
+  router?: Address;
+  fromBlock?: bigint;
+}): RouterDeployment[] {
+  if (!router) return [...addresses.fuseRouterDeployments];
+
+  const deployment = addresses.fuseRouterDeployments.find(
+    (candidate) => candidate.address.toLowerCase() === router.toLowerCase(),
+  );
+  if (deployment) return [deployment];
+
+  return [
+    {
+      address: getAddress(router),
+      deployBlock: fromBlock ?? addresses.fuseRouterDeployBlock,
+      label: "current",
+    },
+  ];
+}
+
 export async function getRoutedEvents({
   publicClient,
   fromBlock,
@@ -61,17 +88,7 @@ export async function getRoutedEvents({
     toBlock === "latest" ? await publicClient.getBlockNumber() : toBlock;
   const allLogs: RoutedEventRecord[] = [];
   const maxChunkSize = chunkSize > 10_000n ? 10_000n : chunkSize;
-  const deployments = router
-    ? [
-        addresses.fuseRouterDeployments.find(
-          (deployment) => deployment.address.toLowerCase() === router.toLowerCase(),
-        ) ?? {
-          address: router,
-          deployBlock: addresses.fuseRouterDeployBlock,
-          label: "current" as const,
-        },
-      ]
-    : addresses.fuseRouterDeployments;
+  const deployments = resolveRouterDeployments({ addresses, router, fromBlock });
 
   for (const deployment of deployments) {
     const startBlock =

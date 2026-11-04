@@ -352,11 +352,13 @@ export default function LeaderboardPage() {
                         )}
                       </td>
                       <td>
-                        <Link
-                          href={`/widget?builder=${row.builder}`}
-                        >
-                          Open in Widget
-                        </Link>{" "}
+                        {row.registeredOnCurrentRouter ? (
+                          <Link href={`/widget?builder=${row.builder}`}>
+                            Open in Widget
+                          </Link>
+                        ) : (
+                          "Previous router only"
+                        )}{" "}
                         |{" "}
                         <button
                           type="button"

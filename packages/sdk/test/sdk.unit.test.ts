@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { encodeErrorResult, parseUnits } from "viem";
+import { encodeErrorResult, getAddress, parseUnits, type Address } from "viem";
 import {
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
@@ -23,6 +23,7 @@ import {
   estimateTokenUsdValue,
   formatFeeBps,
   formatUsd,
+  getBuilderAnalytics,
   getLeaderboardSnapshot,
   getRoutedEvents,
   mapActionCodeToType,
@@ -495,6 +496,7 @@ describe("@fuse/sdk unit tests", () => {
       uniqueUsers: 1,
       actionCount: 1,
       selfReferralActionCount: 1,
+      registeredOnCurrentRouter: true,
       isFuseTestBuilder: true,
       actionCounts: { swap: 0, save: 1, lock: 0 },
       volumeByToken: { MUSD: { rawWei: parseUnits("10", 18).toString() } },
@@ -703,9 +705,18 @@ describe("@fuse/sdk unit tests", () => {
     );
     expect(legacyBuilder).toMatchObject({
       registered: true,
+      registeredOnCurrentRouter: false,
       active: true,
       feeBps: 15,
     });
+    expect(snapshot.routerAddress).toBe(MEZO_TESTNET_ADDRESSES.fuseRouter);
+    expect(snapshot.routerDeployments).toEqual(
+      MEZO_TESTNET_ADDRESSES.fuseRouterDeployments.map((deployment) => ({
+        address: deployment.address,
+        deployBlock: deployment.deployBlock.toString(),
+        label: deployment.label,
+      })),
+    );
     expect(readContract).toHaveBeenCalledWith(
       expect.objectContaining({
         address: MEZO_TESTNET_ADDRESSES.fuseRouter,
@@ -718,6 +729,152 @@ describe("@fuse/sdk unit tests", () => {
         functionName: "builders",
       }),
     );
+  });
+
+  it("uses only the selected router for builder configuration and snapshot metadata", async () => {
+    const legacyDeployment = MEZO_TESTNET_ADDRESSES.fuseRouterDeployments.find(
+      (deployment) => deployment.label === "legacy",
+    )!;
+    const legacyRouterLowercase = legacyDeployment.address.toLowerCase() as Address;
+    const builder = LEGACY_PAID_BUILDER_TESTNET;
+    const readContract = vi.fn().mockImplementation(
+      ({ address, functionName }: { address: string; functionName: string }) => {
+        if (functionName === "builders") {
+          return address.toLowerCase() === legacyDeployment.address.toLowerCase()
+            ? [15n, true, true, "ipfs://legacy-builder"]
+            : [0n, false, false, ""];
+        }
+        if (functionName === "latestRoundData") {
+          return [1n, 100_000_000n, 0n, BigInt(Math.floor(Date.now() / 1000))];
+        }
+        if (functionName === "decimals") return 8;
+        return Promise.reject(new Error(`Unexpected read: ${functionName}`));
+      },
+    );
+    const getLogs = vi.fn().mockImplementation(({ event }: { event: { name: string } }) =>
+      event.name === "BuilderRegistered" ? [{ args: { builder } }] : [],
+    );
+    const publicClient = {
+      getLogs,
+      readContract,
+      getBlockNumber: vi.fn().mockResolvedValue(legacyDeployment.deployBlock),
+    } as any;
+
+    const snapshot = await getLeaderboardSnapshot({
+      publicClient,
+      router: legacyRouterLowercase,
+      fromBlock: legacyDeployment.deployBlock,
+      toBlock: legacyDeployment.deployBlock,
+    });
+
+    expect(snapshot.routerAddress).toBe(getAddress(legacyDeployment.address));
+    expect(snapshot.routerDeployments).toEqual([
+      {
+        address: getAddress(legacyDeployment.address),
+        deployBlock: legacyDeployment.deployBlock.toString(),
+        label: "legacy",
+      },
+    ]);
+    expect(getLogs.mock.calls.every(([params]) => params.address === legacyDeployment.address)).toBe(
+      true,
+    );
+    expect(snapshot.builders.find((row) => row.builder === builder)).toMatchObject({
+      feeBps: 15,
+      registeredOnCurrentRouter: false,
+    });
+
+    readContract.mockClear();
+    await getBuilderAnalytics({
+      publicClient,
+      builder,
+      router: legacyDeployment.address,
+      fromBlock: legacyDeployment.deployBlock,
+      toBlock: legacyDeployment.deployBlock,
+    });
+    expect(
+      readContract.mock.calls
+        .filter(([params]) => params.functionName === "builders")
+        .map(([params]) => params.address),
+    ).toEqual([legacyDeployment.address]);
+  });
+
+  it("uses fromBlock for unlisted explicit routers in event and registration scans", async () => {
+    const router = "0x000000000000000000000000000000000000dEaD";
+    const fromBlock = 123n;
+    const getLogs = vi.fn().mockResolvedValue([]);
+    await getRoutedEvents({
+      publicClient: { getLogs } as any,
+      router,
+      toBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
+    });
+    expect(getLogs.mock.calls[0][0]).toMatchObject({
+      address: router,
+      fromBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
+    });
+
+    const builder = DEFAULT_PAID_BUILDER_TESTNET;
+    getLogs.mockImplementation(({ event }: { event: { name: string } }) =>
+      event.name === "BuilderRegistered" ? [{ args: { builder } }] : [],
+    );
+    const readContract = vi.fn().mockImplementation(
+      ({ address, functionName }: { address: string; functionName: string }) => {
+        if (functionName === "builders") {
+          return address.toLowerCase() === router.toLowerCase()
+            ? [15n, true, true, "ipfs://custom-router-builder"]
+            : [0n, false, false, ""];
+        }
+        if (functionName === "latestRoundData") {
+          return [1n, 100_000_000n, 0n, BigInt(Math.floor(Date.now() / 1000))];
+        }
+        if (functionName === "decimals") return 8;
+        return Promise.reject(new Error(`Unexpected read: ${functionName}`));
+      },
+    );
+    getLogs.mockClear();
+    const publicClient = {
+      getLogs,
+      readContract,
+      getBlockNumber: vi.fn().mockResolvedValue(fromBlock + 1n),
+    } as any;
+
+    const snapshot = await getLeaderboardSnapshot({
+      publicClient,
+      router,
+      fromBlock,
+      toBlock: fromBlock + 1n,
+    });
+
+    expect(getLogs).toHaveBeenCalledTimes(2);
+    expect(
+      getLogs.mock.calls.every(
+        ([params]) =>
+          params.address === getAddress(router) &&
+          params.fromBlock === fromBlock &&
+          params.toBlock === fromBlock + 1n,
+      ),
+    ).toBe(true);
+    expect(snapshot.routerAddress).toBe(getAddress(router));
+    expect(snapshot.routerDeployments).toEqual([
+      {
+        address: getAddress(router),
+        deployBlock: fromBlock.toString(),
+        label: "current",
+      },
+    ]);
+
+    getLogs.mockClear();
+    await getLeaderboardSnapshot({
+      publicClient,
+      router,
+      toBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
+    });
+    expect(
+      getLogs.mock.calls.every(
+        ([params]) =>
+          params.address === getAddress(router) &&
+          params.fromBlock === MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
+      ),
+    ).toBe(true);
   });
 
   it("builds and encodes MUSD x402 v2 payment required headers accurately", () => {
