@@ -69,12 +69,12 @@ export default function LeaderboardPage() {
             href={
               snapshot
                 ? getExplorerAddressUrl(snapshot.routerAddress)
-                : "https://explorer.test.mezo.org/address/0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1"
+                : "https://explorer.test.mezo.org/address/0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4"
             }
             target="_blank"
             rel="noreferrer"
           >
-            0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1
+            0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4
           </a>
           ). All builder names are explicitly labeled{" "}
           <strong>(self-reported)</strong>.

@@ -48,13 +48,17 @@ export async function GET(
   });
 
   try {
-    const builderConfig = await publicClient.readContract({
-      address: MEZO_TESTNET_ADDRESSES.fuseRouter,
-      abi: fuseRouterAbi,
-      functionName: "builders",
-      args: [builderAddress],
-    });
-    if (!builderConfig[2]) {
+    const builderConfigs = await Promise.all(
+      MEZO_TESTNET_ADDRESSES.fuseRouterDeployments.map(({ address }) =>
+        publicClient.readContract({
+          address,
+          abi: fuseRouterAbi,
+          functionName: "builders",
+          args: [builderAddress],
+        }),
+      ),
+    );
+    if (!builderConfigs.some((builderConfig) => builderConfig[2])) {
       return NextResponse.json({ error: "BUILDER_NOT_REGISTERED" }, { status: 404 });
     }
 
