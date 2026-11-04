@@ -88,7 +88,35 @@ pnpm typecheck
 
 `pnpm --filter mezo-fuse test:live` runs the SDK against Mezo testnet.
 
-## Integrate
+## Guides
+
+All guides use Mezo testnet. You need a wallet on chain ID `31611` with some testnet BTC, because BTC pays gas on Mezo. Start the app first with the steps in [Run it locally](#run-it-locally).
+
+### Try Fuse as a user
+
+1. Open `http://localhost:3000/widget?builder=0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283&action=save`. This uses the 15 bps demo builder. Change `action` to `swap` or `lock` for the other actions.
+2. Connect your wallet and switch to Mezo testnet when the widget asks.
+3. Approve the builder's fee. This sets the most that builder can ever charge you. It doesn't give the builder access to your funds, and you can revoke it at any time. Zero-fee builders skip this step.
+4. Enter an amount, check the fee and what you'll get, then sign. Saving and swapping MUSD needs one signature where your wallet supports permits, and two transactions where it doesn't.
+5. The widget shows the transaction link when it confirms. The same action also appears on `/leaderboard` under the builder.
+
+Lock notes: testnet locks last 7 to 30 days, and the unlock time is rounded down to the start of a week (Thursday 00:00 UTC), so it can come sooner than the length you picked. Locked BTC can't be withdrawn before it unlocks. The lock belongs to your wallet.
+
+### Become a builder
+
+1. Open `http://localhost:3000/builders` and connect the wallet that will receive your fees. That wallet's address is your builder code.
+2. Pick a fee from 0 to 50 bps. Enter a display name and app URL, press Generate JSON metadataURI, then press `registerBuilder`. Registration is one transaction, and anyone can register.
+3. Copy an embed snippet from the console, or use the iframe below with your address in `builder`.
+4. Send a test action through your widget from a different wallet. Actions where the user is the builder don't count on the leaderboard.
+5. Check that the action shows up on `/leaderboard` and in the console's recent events.
+
+Later, from the same wallet, you can:
+
+- Change your fee with `setFee`. Users whose approved cap is lower than the new fee have to approve again before their next action goes through.
+- Pause or resume your builder code with `setActive(false)` and `setActive(true)`.
+- Update your name and URL with `setMetadataURI`.
+
+You can also do all of this from code (see [Run builder actions from code](#run-builder-actions-from-code)).
 
 ### Embed the widget
 
@@ -103,9 +131,11 @@ Serve `apps/web` and point an iframe at its `/widget` route:
 ></iframe>
 ```
 
+`builder` is your builder address. `action` is `swap`, `save` or `lock`. Without a `builder` the widget uses the demo paid builder, so always set it.
+
 ### Use the SDK
 
-Install it with `npm install mezo-fuse viem`.
+Install it with `npm install mezo-fuse viem`. The package is on npm as [`mezo-fuse`](https://www.npmjs.com/package/mezo-fuse).
 
 ```ts
 import { createPublicClient, http, parseUnits } from "viem";
@@ -123,21 +153,137 @@ const publicClient = createPublicClient({
 
 // walletClient is a viem WalletClient with a connected account on Mezo testnet.
 const fuse = new FuseClient({ publicClient, walletClient });
+const builder = DEFAULT_PAID_BUILDER_TESTNET; // use your own builder address
+```
 
-const result = await fuse.executeSave({
-  builder: DEFAULT_PAID_BUILDER_TESTNET,
-  amount: parseUnits("10", 18),
-});
+Read-only calls like quotes, builder status and events work without a `walletClient`. MUSD and BTC both use 18 decimals.
+
+#### Check and approve the builder fee
+
+```ts
+const status = await fuse.getBuilderStatus(builder, userAddress);
+
+if (status.needsApproval || status.needsHigherApproval) {
+  await fuse.approveBuilder({ builder, maxFeeBps: status.feeBps });
+}
+```
+
+`status` also tells you whether the builder is registered and active, its current fee and whether the router is paused. Call `fuse.revokeBuilder({ builder })` to remove an approval.
+
+#### Save MUSD into the Savings Vault
+
+```ts
+const amount = parseUnits("10", 18);
+const quote = await fuse.getSaveQuote({ builder, amountIn: amount });
+const result = await fuse.executeSave({ builder, amount });
 console.log(result.explorerUrl);
 ```
 
-`FuseClient` also has `executeSwap`, `executeLock`, `approveBuilder`, `revokeBuilder`, quote functions and `getRoutedEvents`.
+#### Swap on Tigris
+
+```ts
+import { MEZO_TESTNET_ADDRESSES } from "mezo-fuse";
+
+const amountIn = parseUnits("0.001", 18);
+const quote = await fuse.getSwapQuote({
+  builder,
+  tokenIn: MEZO_TESTNET_ADDRESSES.btc,
+  tokenOut: MEZO_TESTNET_ADDRESSES.musd,
+  amountIn,
+  slippageBps: 50, // 0.50%, the default
+});
+
+const result = await fuse.executeSwap({
+  builder,
+  tokenIn: quote.tokenIn,
+  tokenOut: quote.tokenOut,
+  amountIn,
+  amountOutMin: quote.amountOutMin,
+});
+```
+
+If the price moves past `amountOutMin`, the swap reverts and the user only loses gas.
+
+#### Lock BTC as veBTC
+
+```ts
+const amount = parseUnits("0.0001", 18);
+const lockDurationSeconds = 14 * 24 * 60 * 60; // 7 to 30 days on testnet
+const quote = await fuse.getLockQuote({ builder, amountIn: amount, lockDurationSeconds });
+const result = await fuse.executeLock({ builder, amount, lockDurationSeconds });
+```
+
+Show the user the unlock date from the quote before they sign, because it's rounded down to a week boundary.
+
+Each `execute*` call returns `txHash`, `receipt`, `explorerUrl`, `usedPermit` and, when a separate token approval was needed, `approvalTxHash`. Pass `onStep` to show progress while the wallet signs and the transaction confirms.
 
 MUSD swaps and saves use a single EIP-2612 permit transaction where the wallet supports it. Bitcoin wallets that use Mezo Passport smart accounts can't sign typed data, so the SDK falls back to approve, then save or swap.
 
-## Paid analytics
+#### Run builder actions from code
+
+```ts
+await fuse.registerBuilder({ feeBps: 15, metadataURI: "ipfs://your-metadata" });
+await fuse.setFee({ newFeeBps: 10 });
+await fuse.setActive({ active: false });
+await fuse.setMetadataURI({ metadataURI: "ipfs://new-metadata" });
+```
+
+These are sent from the connected wallet, which is the builder.
+
+#### Read routed actions
+
+```ts
+const events = await fuse.getRoutedEvents({ builder });
+for (const e of events) {
+  console.log(e.action, e.user, e.amountIn, e.fee, e.explorerTxUrl);
+}
+```
+
+Without `fromBlock` this reads both routers from their deployment blocks. The Mezo RPC limits log queries to 10,000 blocks, so the SDK splits the range for you.
+
+### Read the leaderboard
+
+`GET /api/leaderboard` returns the public ranking as JSON.
+
+| Query | Values | Default |
+| :--- | :--- | :--- |
+| `action` | `all`, `swap`, `save`, `lock` | `all` |
+| `sort` | `users`, `volumeUsd`, `feesUsd`, `actions` | `users` |
+| `refresh` | `true` skips the cache | off |
+
+### Buy paid analytics
 
 `GET /api/analytics/{builder}` costs 0.05 MUSD per request over x402. Without payment it returns `402 Payment Required`. With a signed `PAYMENT-SIGNATURE` header the server settles the payment on Mezo testnet through the facilitator and returns the builder's analytics with the settlement hash. The endpoint fails closed when `X402_PAY_TO` isn't set.
+
+```ts
+import { createMusdX402PaymentPayload, type X402PaymentRequired } from "mezo-fuse";
+
+const url = `http://localhost:3000/api/analytics/${builder}`;
+const challenge = (await (await fetch(url)).json()) as X402PaymentRequired;
+
+const { headerValue } = await createMusdX402PaymentPayload({
+  publicClient,
+  walletClient,
+  paymentRequired: challenge,
+});
+
+const res = await fetch(url, { headers: { "PAYMENT-SIGNATURE": headerValue } });
+const { x402, analytics } = await res.json();
+console.log(x402.explorerUrl, analytics);
+```
+
+### Common errors
+
+| Error | What it means | Fix |
+| :--- | :--- | :--- |
+| `BuilderNotApprovedByUser` | The user hasn't approved this paid builder | Call `approveBuilder` or use the widget's approve step |
+| `FeeAboveUserApproval` | The builder raised its fee above the user's cap | The user approves the new fee, or the builder lowers it |
+| `BuilderNotActive` | The builder paused its code | The builder calls `setActive(true)` |
+| `BuilderNotRegistered` | The address isn't a builder | Register it first |
+| `FeeAboveMaxCap` | The fee is above 50 bps | Use 50 bps or less |
+| `InsufficientOutputAmount` | The swap price moved past `amountOutMin` | Get a new quote and try again |
+| `InvalidLockDuration` | The lock is shorter than 7 days or longer than 30 | Pick a length in that range |
+| `RouterPaused` | The router owner paused actions | Wait for it to be unpaused. `revokeBuilder` still works |
 
 ## Environment variables
 
