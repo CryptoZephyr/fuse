@@ -51,7 +51,7 @@ Mezo contracts the router uses:
 ```text
 fuse/
 ├── contracts/      Foundry project: FuseRouter, deploy script, unit, fuzz and fork tests
-├── packages/sdk/   @fuse/sdk: FuseClient, quotes, MUSD permit, oracle, leaderboard indexer, x402
+├── packages/sdk/   mezo-fuse: FuseClient, quotes, MUSD permit, oracle, leaderboard indexer, x402
 └── apps/web/       @fuse/web: Next.js app with the widget, builders console, leaderboard, docs and APIs
 ```
 
@@ -86,7 +86,7 @@ pnpm test:packages         # SDK and web tests
 pnpm typecheck
 ```
 
-`pnpm --filter @fuse/sdk test:live` runs the SDK against Mezo testnet.
+`pnpm --filter mezo-fuse test:live` runs the SDK against Mezo testnet.
 
 ## Integrate
 
@@ -105,7 +105,7 @@ Serve `apps/web` and point an iframe at its `/widget` route:
 
 ### Use the SDK
 
-`@fuse/sdk` isn't published to npm yet, so use it from this workspace.
+Install it with `npm install mezo-fuse viem`.
 
 ```ts
 import { createPublicClient, http, parseUnits } from "viem";
@@ -114,7 +114,7 @@ import {
   FuseClient,
   MEZO_TESTNET_CHAIN,
   MEZO_TESTNET_RPC_URL,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 const publicClient = createPublicClient({
   chain: MEZO_TESTNET_CHAIN,

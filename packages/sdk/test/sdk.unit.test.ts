@@ -43,7 +43,7 @@ import {
   type X402PaymentPayload,
 } from "../src/index.js";
 
-describe("@fuse/sdk unit tests", () => {
+describe("mezo-fuse unit tests", () => {
   it("uses the replacement demo builders and retains retired wallets for history", () => {
     expect(DEFAULT_PAID_BUILDER_TESTNET).toBe(
       "0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283",

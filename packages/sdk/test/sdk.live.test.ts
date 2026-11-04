@@ -13,7 +13,7 @@ import {
   getLeaderboardSnapshot,
 } from "../src/index.js";
 
-describe("@fuse/sdk live Mezo Testnet integration tests", () => {
+describe("mezo-fuse live Mezo Testnet integration tests", () => {
   const publicClient = createPublicClient({
     chain: MEZO_TESTNET_CHAIN,
     transport: http(MEZO_TESTNET_RPC_URL, { timeout: 20_000 }),

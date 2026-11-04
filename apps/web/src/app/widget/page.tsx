@@ -2,7 +2,7 @@
 
 import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { DEFAULT_PAID_BUILDER_TESTNET, type FuseActionType } from "@fuse/sdk";
+import { DEFAULT_PAID_BUILDER_TESTNET, type FuseActionType } from "mezo-fuse";
 import { DynamicFuseWidget } from "../../components/DynamicFuseWidget";
 
 function WidgetSurfaceContent() {

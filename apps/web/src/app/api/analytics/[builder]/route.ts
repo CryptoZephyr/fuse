@@ -20,7 +20,7 @@ import {
   getBuilderAnalytics,
   settleX402Payment,
   verifyX402Payment,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 export const dynamic = "force-dynamic";
 

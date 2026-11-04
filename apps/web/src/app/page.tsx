@@ -5,7 +5,7 @@ import {
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
   MEZO_TESTNET_ADDRESSES,
   getExplorerAddressUrl,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 import { DynamicFuseWidget } from "../components/DynamicFuseWidget";
 
 export default function HomePage() {
@@ -59,7 +59,7 @@ export default function HomePage() {
           </li>
           <li>
             <Link href="/docs">
-              Documentation (/docs) — Quickstart, @fuse/sdk Reference &amp; FuseRouter Specs
+              Documentation (/docs) — Quickstart, mezo-fuse Reference &amp; FuseRouter Specs
             </Link>
           </li>
           <li>
