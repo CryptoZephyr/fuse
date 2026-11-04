@@ -2,15 +2,15 @@
   "name": "fuse-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Fuse — Builder codes and distribution router for Mezo (Track 2)",
+  "description": "Fuse: builder codes and distribution router for Mezo",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/CryptoZephyr/fuse.git"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
   },
   "scripts": {
     "contracts:build": "forge build --root contracts",

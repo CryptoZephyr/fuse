@@ -13,7 +13,7 @@ export default function DocsPage() {
       <header data-fuse-header="docs">
         <h1>Fuse Protocol Documentation (Mezo Testnet · Chain ID 31611)</h1>
         <p>
-          Developer and integrator reference for <strong>Fuse</strong> — the
+          Developer and integrator reference for <strong>Fuse</strong>, the
           Embeddable DeFi Router &amp; Builder Attribution Layer for Mezo.
         </p>
         <nav aria-label="Fuse navigation" data-fuse-nav="primary">
@@ -53,7 +53,7 @@ export default function DocsPage() {
         <h3>Option A: Drop-in <code>&lt;iframe&gt;</code> Embed</h3>
         <pre data-fuse-doc-snippet="iframe">
           <code>{`<iframe
-  src="https://fuse.mezo.org/widget?builder=${DEFAULT_PAID_BUILDER_TESTNET}&tab=save"
+  src="http://localhost:3000/widget?builder=${DEFAULT_PAID_BUILDER_TESTNET}&action=save"
   width="440"
   height="680"
   title="Fuse Mezo DeFi Widget"
@@ -365,7 +365,7 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
         <h2>4. Mezo-Specific Protocol Mechanics</h2>
         <dl>
           <dt>
-            <strong>Dual-Path MUSD Permit &amp; Fallback (T13)</strong>
+            <strong>Dual-Path MUSD Permit &amp; Fallback</strong>
           </dt>
           <dd>
             MUSD on Mezo Testnet supports EIP-2612 <code>permit</code>. Standard
@@ -414,7 +414,7 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
         aria-label="Paid Builder Analytics over MUSD x402"
         data-fuse-section="x402-docs"
       >
-        <h2>5. Paid Builder Analytics API over MUSD x402 (T18)</h2>
+        <h2>5. Paid Builder Analytics API over MUSD x402</h2>
         <p>
           Endpoint: <code>GET /api/analytics/[builder]</code>
         </p>

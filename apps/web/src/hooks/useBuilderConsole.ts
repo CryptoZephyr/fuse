@@ -346,7 +346,7 @@ export function useBuilderConsole(options: UseBuilderConsoleOptions = {}) {
 
   const snippets = useMemo(() => {
     const origin =
-      typeof window !== "undefined" ? window.location.origin : "https://fuse.mezo.org";
+      typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
     const iframeSnippet = `<iframe
   src="${origin}/widget?builder=${targetBuilderAddress}&tab=save"
   width="440"

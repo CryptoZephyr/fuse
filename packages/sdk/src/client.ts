@@ -578,7 +578,7 @@ export class FuseClient {
   }
 
   // -------------------------------------------------------------------------
-  // Routed Actions with Dual-Path MUSD Permit / Approve Execution (T13)
+  // Routed Actions with Dual-Path MUSD Permit / Approve Execution
   // -------------------------------------------------------------------------
 
   async executeSave(params: {
