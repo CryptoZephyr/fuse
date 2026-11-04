@@ -32,6 +32,8 @@ import {
   isTaprootAddress,
   parseBuilderMetadataURI,
   previewVeBtcUnlockTime,
+  RETIRED_PAID_BUILDER_TESTNET,
+  RETIRED_ZERO_FEE_BUILDER_TESTNET,
   buildX402PaymentRequired,
   decodeX402Header,
   encodeX402Header,
@@ -42,6 +44,19 @@ import {
 } from "../src/index.js";
 
 describe("@fuse/sdk unit tests", () => {
+  it("uses the replacement demo builders and retains retired wallets for history", () => {
+    expect(DEFAULT_PAID_BUILDER_TESTNET).toBe(
+      "0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283",
+    );
+    expect(DEFAULT_ZERO_FEE_BUILDER_TESTNET).toBe(
+      "0x4FdA3C5A0E49B183900d155f7820E7E40BFA8A9F",
+    );
+    expect(FUSE_TEST_WALLETS).toContain(DEFAULT_PAID_BUILDER_TESTNET);
+    expect(FUSE_TEST_WALLETS).toContain(DEFAULT_ZERO_FEE_BUILDER_TESTNET);
+    expect(FUSE_TEST_WALLETS).toContain(RETIRED_PAID_BUILDER_TESTNET);
+    expect(FUSE_TEST_WALLETS).toContain(RETIRED_ZERO_FEE_BUILDER_TESTNET);
+  });
+
   it("calculates builder fees accurately within the 50 bps cap", () => {
     const amount = parseUnits("100", 18);
 
@@ -91,7 +106,7 @@ describe("@fuse/sdk unit tests", () => {
     expect(urlMeta.selfReported).toBe(true);
 
     const emptyMeta = parseBuilderMetadataURI("", DEFAULT_ZERO_FEE_BUILDER_TESTNET);
-    expect(emptyMeta.name).toContain("Builder 0xc271");
+    expect(emptyMeta.name).toBe("Builder 0x4FdA...8A9F");
     expect(emptyMeta.selfReported).toBe(true);
   });
 

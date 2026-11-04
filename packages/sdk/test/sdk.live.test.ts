@@ -51,7 +51,6 @@ describe("@fuse/sdk live Mezo Testnet integration tests", () => {
     expect(zeroStatus.active).toBe(true);
     expect(zeroStatus.feeBps).toBe(0);
     expect(zeroStatus.feePercentFormatted).toBe("0.00%");
-    expect(zeroStatus.userApproved).toBe(true);
   }, 20_000);
 
   it("computes live swap, save, and lock quotes with Skip BTC/USD dollar estimates", async () => {

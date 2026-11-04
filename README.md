@@ -18,8 +18,10 @@
 | **MUSD Savings Vault (`sMUSD`)** | [`0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16`](https://explorer.test.mezo.org/address/0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16) | ERC-4626 yield vault for MUSD |
 | **`VeBTC` (`VotingEscrow`)** | [`0xB63fcCd03521Cf21907627bd7fA465C129479231`](https://explorer.test.mezo.org/address/0xB63fcCd03521Cf21907627bd7fA465C129479231) | Testnet `maxLockTime = 30 days` (`2,592,000s`), `WEEK = 7 days` (`604,800s`) |
 | **Skip `BTC/USD` Oracle** | [`0x7b7c000000000000000000000000000000000015`](https://explorer.test.mezo.org/address/0x7b7c000000000000000000000000000000000015) | Chainlink-compatible `latestRoundData()` |
-| **Demo Paid Builder (`15 bps`)** | [`0x782bfA8870BcEeAC867452f06Cb1caa73294539a`](https://explorer.test.mezo.org/address/0x782bfA8870BcEeAC867452f06Cb1caa73294539a) | Registered on the current router with `15 bps` (`0.15%`) fee |
-| **Demo Zero-Fee Builder (`0 bps`)** | [`0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53`](https://explorer.test.mezo.org/address/0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53) | Registered on the current router with `0 bps` (`0.00%`) fee |
+| **Demo Paid Builder (`15 bps`)** | [`0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283`](https://explorer.test.mezo.org/address/0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283) | Registered on the current router with `15 bps` (`0.15%`) fee |
+| **Demo Zero-Fee Builder (`0 bps`)** | [`0x4FdA3C5A0E49B183900d155f7820E7E40BFA8A9F`](https://explorer.test.mezo.org/address/0x4FdA3C5A0E49B183900d155f7820E7E40BFA8A9F) | Registered on the current router with `0 bps` (`0.00%`) fee |
+| **Retired Demo Paid Builder (`15 bps`, key lost)** | [`0x782bfA8870BcEeAC867452f06Cb1caa73294539a`](https://explorer.test.mezo.org/address/0x782bfA8870BcEeAC867452f06Cb1caa73294539a) | Retired. Still registered for history. |
+| **Retired Demo Zero-Fee Builder (`0 bps`, key lost)** | [`0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53`](https://explorer.test.mezo.org/address/0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53) | Retired. Still registered for history. |
 
 Leaderboard and analytics include events from both router deployments, including legacy history.
 
@@ -61,7 +63,7 @@ fuse/
 ### A. Drop-In `<iframe>` Embed
 ```html
 <iframe
-  src="https://fuse.mezo.org/widget?builder=0x782bfA8870BcEeAC867452f06Cb1caa73294539a&tab=save"
+  src="https://fuse.mezo.org/widget?builder=0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283&tab=save"
   width="440"
   height="680"
   title="Fuse Mezo DeFi Widget"
@@ -77,7 +79,7 @@ export function MyMezoDapp() {
   return (
     <FusePassportProvider>
       <FuseWidget
-        builder="0x782bfA8870BcEeAC867452f06Cb1caa73294539a"
+        builder="0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283"
         defaultAction="save"
       />
     </FusePassportProvider>
@@ -141,12 +143,12 @@ pnpm --filter @fuse/sdk test
 pnpm --filter @fuse/web dev
 ```
 - **Home & Surface Directory:** `http://localhost:3000/`
-- **Embeddable Widget:** `http://localhost:3000/widget?builder=0x782bfA8870BcEeAC867452f06Cb1caa73294539a&action=swap`
+- **Embeddable Widget:** `http://localhost:3000/widget?builder=0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283&action=swap`
 - **Builders Console:** `http://localhost:3000/builders`
 - **Builder Leaderboard:** `http://localhost:3000/leaderboard`
 - **Documentation:** `http://localhost:3000/docs`
 - **Leaderboard JSON API:** `http://localhost:3000/api/leaderboard`
-- **Paid Builder Analytics (MUSD x402):** `http://localhost:3000/api/analytics/0x782bfA8870BcEeAC867452f06Cb1caa73294539a`
+- **Paid Builder Analytics (MUSD x402):** `http://localhost:3000/api/analytics/0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283`
 
 ## 5. Owner Powers
 

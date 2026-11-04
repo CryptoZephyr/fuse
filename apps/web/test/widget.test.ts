@@ -31,7 +31,10 @@ describe("@fuse/web widget contract & constraint verification", () => {
       "0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4",
     );
     expect(DEFAULT_ZERO_FEE_BUILDER_TESTNET).toBe(
-      "0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53",
+      "0x4FdA3C5A0E49B183900d155f7820E7E40BFA8A9F",
+    );
+    expect(DEFAULT_PAID_BUILDER_TESTNET).toBe(
+      "0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283",
     );
   });
 
