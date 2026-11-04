@@ -8,7 +8,8 @@
 
 | Contract / Resource | Address | Details |
 | :--- | :--- | :--- |
-| **`FuseRouter`** | [`0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1`](https://explorer.test.mezo.org/address/0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1) | Deployed at block `16328764` · Verified `exact_match` on Sourcify v2 (`matchId: 56804757`) |
+| **`FuseRouter` (Current)** | [`0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4`](https://explorer.test.mezo.org/address/0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4) | Deployed at block `16569522` from commit `b804a54`; owner is deployer; Sourcify `exact_match` (job `e46eac69-c702-429a-a506-cfc5cb897f0c`) |
+| **`FuseRouter` (Previous deployment)** | [`0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1`](https://explorer.test.mezo.org/address/0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1) | Deployed at block `16328764` from commit `f3615b6` |
 | **Tigris `PoolRouter`** | [`0x9a1ff7FE3a0F69959A3fBa1F1e5ee18e1A9CD7E9`](https://explorer.test.mezo.org/address/0x9a1ff7FE3a0F69959A3fBa1F1e5ee18e1A9CD7E9) | Canonical V2 AMM router (`MUSD/BTC` volatile pool `0xd16A...6AA9`) |
 | **Tigris `PoolFactory`** | [`0x4947243CC818b627A5D06d14C4eCe7398A23Ce1A`](https://explorer.test.mezo.org/address/0x4947243CC818b627A5D06d14C4eCe7398A23Ce1A) | Pool factory passed in `Route` struct |
 | **`MUSD` (Mezo USD)** | [`0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503`](https://explorer.test.mezo.org/address/0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503) | 18 decimals · Supports EIP-2612 `permit` & Permit2 x402 |
@@ -17,8 +18,10 @@
 | **MUSD Savings Vault (`sMUSD`)** | [`0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16`](https://explorer.test.mezo.org/address/0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16) | ERC-4626 yield vault for MUSD |
 | **`VeBTC` (`VotingEscrow`)** | [`0xB63fcCd03521Cf21907627bd7fA465C129479231`](https://explorer.test.mezo.org/address/0xB63fcCd03521Cf21907627bd7fA465C129479231) | Testnet `maxLockTime = 30 days` (`2,592,000s`), `WEEK = 7 days` (`604,800s`) |
 | **Skip `BTC/USD` Oracle** | [`0x7b7c000000000000000000000000000000000015`](https://explorer.test.mezo.org/address/0x7b7c000000000000000000000000000000000015) | Chainlink-compatible `latestRoundData()` |
-| **Demo Paid Builder (`15 bps`)** | [`0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a`](https://explorer.test.mezo.org/address/0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a) | Registered on-chain with `15 bps` (`0.15%`) fee |
-| **Demo Zero-Fee Builder (`0 bps`)** | [`0x637A41a27e14897E72D3f9e488D4D33090DABEde`](https://explorer.test.mezo.org/address/0x637A41a27e14897E72D3f9e488D4D33090DABEde) | Attribution-only (`0.00%` fee, no user fee approval required) |
+| **Demo Paid Builder (`15 bps`)** | [`0x782bfA8870BcEeAC867452f06Cb1caa73294539a`](https://explorer.test.mezo.org/address/0x782bfA8870BcEeAC867452f06Cb1caa73294539a) | Registered on the current router with `15 bps` (`0.15%`) fee |
+| **Demo Zero-Fee Builder (`0 bps`)** | [`0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53`](https://explorer.test.mezo.org/address/0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53) | Registered on the current router with `0 bps` (`0.00%`) fee |
+
+Leaderboard and analytics include events from both router deployments, including legacy history.
 
 ---
 
@@ -58,7 +61,7 @@ fuse/
 ### A. Drop-In `<iframe>` Embed
 ```html
 <iframe
-  src="https://fuse.mezo.org/widget?builder=0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a&tab=save"
+  src="https://fuse.mezo.org/widget?builder=0x782bfA8870BcEeAC867452f06Cb1caa73294539a&tab=save"
   width="440"
   height="680"
   title="Fuse Mezo DeFi Widget"
@@ -74,7 +77,7 @@ export function MyMezoDapp() {
   return (
     <FusePassportProvider>
       <FuseWidget
-        builder="0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a"
+        builder="0x782bfA8870BcEeAC867452f06Cb1caa73294539a"
         defaultAction="save"
       />
     </FusePassportProvider>
@@ -138,12 +141,12 @@ pnpm --filter @fuse/sdk test
 pnpm --filter @fuse/web dev
 ```
 - **Home & Surface Directory:** `http://localhost:3000/`
-- **Embeddable Widget:** `http://localhost:3000/widget?builder=0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a&action=swap`
+- **Embeddable Widget:** `http://localhost:3000/widget?builder=0x782bfA8870BcEeAC867452f06Cb1caa73294539a&action=swap`
 - **Builders Console:** `http://localhost:3000/builders`
 - **Builder Leaderboard:** `http://localhost:3000/leaderboard`
 - **Documentation:** `http://localhost:3000/docs`
 - **Leaderboard JSON API:** `http://localhost:3000/api/leaderboard`
-- **Paid Builder Analytics (MUSD x402):** `http://localhost:3000/api/analytics/0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a`
+- **Paid Builder Analytics (MUSD x402):** `http://localhost:3000/api/analytics/0x782bfA8870BcEeAC867452f06Cb1caa73294539a`
 
 ## 5. Owner Powers
 
@@ -151,7 +154,7 @@ The immutable `FuseRouter` owner can pause and unpause routed actions and edit t
 
 ## 6. Deployment Note
 
-The live testnet router at `0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1` was deployed and Sourcify-verified from commit `f3615b6`, where the owner was the deployer. The explicit `_owner` constructor argument applies to the next deployment. The mainnet plan is to use a Safe multisig as owner. Safe 1.4.1 is deployed on Mezo and is used by Mezo Passport and OrangeKit.
+The current testnet router at `0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4` was deployed at block `16569522` from commit `b804a54` with the explicit `_owner` constructor argument. The owner is the deployer, and the deployment is verified as `exact_match` on Sourcify. The previous router at `0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1` remains live and unpaused. Leaderboard and analytics include events from both deployments. The mainnet plan is to use a Safe multisig as owner. Safe 1.4.1 is deployed on Mezo and is used by Mezo Passport and OrangeKit.
 
 ## 7. Leaderboard and Gauge Anti-Gaming
 

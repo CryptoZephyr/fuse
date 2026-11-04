@@ -135,7 +135,7 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
           <tbody>
             <tr>
               <td>
-                <strong>FuseRouter (Verified on Sourcify v2)</strong>
+                <strong>FuseRouter (Current)</strong>
               </td>
               <td>
                 <a
@@ -149,7 +149,26 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
               <td>
                 Deployed at block{" "}
                 <code>{MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock.toString()}</code>{" "}
-                · Exact Match on Sourcify
+                from commit <code>b804a54</code>. Owner is deployer. Sourcify{" "}
+                <code>exact_match</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>FuseRouter (Previous deployment)</td>
+              <td>
+                <a
+                  href={getExplorerAddressUrl(
+                    "0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1",
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <code>0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1</code>
+                </a>
+              </td>
+              <td>
+                Deployed at block <code>16328764</code> from commit{" "}
+                <code>f3615b6</code>
               </td>
             </tr>
             <tr>
@@ -292,6 +311,7 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
             </tr>
           </tbody>
         </table>
+        <p>Leaderboard and analytics include events from both router deployments.</p>
       </section>
 
       <hr />
@@ -455,13 +475,16 @@ console.log("x402 Settlement Tx:", x402.explorerUrl);`}</code>
           paused. The router holds no balances between transactions.
         </p>
         <p>
-          The live testnet router at{" "}
-          <code>0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1</code> was deployed
-          and Sourcify-verified from commit <code>f3615b6</code>, where the
-          owner was the deployer. The explicit <code>_owner</code> constructor
-          argument applies to the next deployment. The mainnet plan is to use a
-          Safe multisig as owner. Safe 1.4.1 is deployed on Mezo and is used by
-          Mezo Passport and OrangeKit.
+          The current testnet router is{" "}
+          <code>0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4</code>, deployed at
+          block <code>16569522</code> from commit <code>b804a54</code> with the
+          explicit <code>_owner</code> constructor argument. The owner is the
+          deployer, and Sourcify reports <code>exact_match</code>. The previous
+          router at <code>0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1</code>
+          remains live and unpaused. Leaderboard and analytics include both
+          deployments. The mainnet plan is to use a Safe multisig as owner.
+          Safe 1.4.1 is deployed on Mezo and is used by Mezo Passport and
+          OrangeKit.
         </p>
       </section>
 
