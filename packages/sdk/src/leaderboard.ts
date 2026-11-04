@@ -23,6 +23,7 @@ import {
   type FuseActionType,
   type RoutedEventRecord,
   getRoutedEvents,
+  resolveRouterDeployments,
 } from "./events.js";
 import {
   type BtcUsdOraclePrice,
@@ -47,6 +48,7 @@ export interface SerializedRoutedEventRecord {
   transactionHash: Hash;
   blockNumber: string;
   logIndex: number;
+  router: Address;
   builder: Address;
   user: Address;
   action: FuseActionType;
@@ -77,6 +79,7 @@ export interface LeaderboardBuilderRow {
   selfReported: true;
   metadata: ParsedBuilderMetadata;
   registered: boolean;
+  registeredOnCurrentRouter: boolean;
   active: boolean;
   feeBps: number;
   feePercentFormatted: string;
@@ -110,6 +113,11 @@ export interface SerializedBtcUsdOraclePrice {
 export interface LeaderboardSnapshot {
   chainId: number;
   routerAddress: Address;
+  routerDeployments: {
+    address: Address;
+    deployBlock: string;
+    label: "current" | "legacy";
+  }[];
   fromBlock: string;
   toBlock: string;
   actionFilter: LeaderboardActionFilter;
@@ -225,6 +233,7 @@ export function serializeRoutedEvent(
     transactionHash: event.transactionHash,
     blockNumber: event.blockNumber.toString(),
     logIndex: event.logIndex,
+    router: getAddress(event.router),
     builder: getAddress(event.builder),
     user: getAddress(event.user),
     action: event.action,
@@ -252,32 +261,99 @@ async function getRegisteredBuilderAddresses(params: {
   publicClient: PublicClient;
   fromBlock: bigint;
   toBlock: bigint;
+  router?: Address;
   addresses: FuseAddresses;
   chunkSize?: bigint;
 }): Promise<Address[]> {
-  const { publicClient, fromBlock, toBlock, addresses, chunkSize = 9_500n } = params;
+  const {
+    publicClient,
+    fromBlock,
+    toBlock,
+    router,
+    addresses,
+    chunkSize = 9_500n,
+  } = params;
   if (toBlock < fromBlock) return [];
 
   const discovered = new Set<string>();
-  let cursor = fromBlock;
+  const deployments = resolveRouterDeployments({ addresses, router, fromBlock });
+  const maxChunkSize = chunkSize > 10_000n ? 10_000n : chunkSize;
 
-  while (cursor <= toBlock) {
-    const end = cursor + chunkSize - 1n > toBlock ? toBlock : cursor + chunkSize - 1n;
-    const logs = await publicClient.getLogs({
-      address: addresses.fuseRouter,
-      event: BUILDER_REGISTERED_EVENT,
-      fromBlock: cursor,
-      toBlock: end,
-    });
-    for (const log of logs) {
-      if (log.args.builder) {
-        discovered.add(getAddress(log.args.builder));
+  for (const deployment of deployments) {
+    const startBlock =
+      fromBlock > deployment.deployBlock ? fromBlock : deployment.deployBlock;
+    let cursor = startBlock;
+
+    while (cursor <= toBlock) {
+      const end =
+        cursor + maxChunkSize - 1n > toBlock
+          ? toBlock
+          : cursor + maxChunkSize - 1n;
+      const logs = await publicClient.getLogs({
+        address: deployment.address,
+        event: BUILDER_REGISTERED_EVENT,
+        fromBlock: cursor,
+        toBlock: end,
+      });
+      for (const log of logs) {
+        if (log.args.builder) {
+          discovered.add(getAddress(log.args.builder));
+        }
       }
+      cursor = end + 1n;
     }
-    cursor = end + 1n;
   }
 
   return Array.from(discovered) as Address[];
+}
+
+function getDefaultScanStartBlock(addresses: FuseAddresses, router?: Address): bigint {
+  if (router) {
+    return (
+      addresses.fuseRouterDeployments.find(
+        (deployment) => deployment.address.toLowerCase() === router.toLowerCase(),
+      )?.deployBlock ?? addresses.fuseRouterDeployBlock
+    );
+  }
+
+  return addresses.fuseRouterDeployments.reduce(
+    (startBlock, deployment) =>
+      deployment.deployBlock < startBlock ? deployment.deployBlock : startBlock,
+    addresses.fuseRouterDeployBlock,
+  );
+}
+
+async function readBuilderConfiguration(
+  publicClient: PublicClient,
+  builder: Address,
+  addresses: FuseAddresses,
+  router?: Address,
+) {
+  const readConfiguration = (router: Address) =>
+    publicClient.readContract({
+      address: router,
+      abi: fuseRouterAbi,
+      functionName: "builders",
+      args: [builder],
+    });
+
+  if (router) return readConfiguration(router);
+
+  const currentConfiguration = await readConfiguration(addresses.fuseRouter);
+  if (currentConfiguration[2]) return currentConfiguration;
+
+  for (const deployment of addresses.fuseRouterDeployments) {
+    if (
+      deployment.label !== "legacy" ||
+      deployment.address.toLowerCase() === addresses.fuseRouter.toLowerCase()
+    ) {
+      continue;
+    }
+    const legacyConfiguration = await readConfiguration(deployment.address);
+    if (legacyConfiguration[2]) return legacyConfiguration;
+  }
+
+  return currentConfiguration;
 }
 
 function buildTokenSummaryMap(
@@ -327,6 +403,7 @@ function buildTokenSummaryMap(
 
 export interface GetLeaderboardSnapshotParameters {
   publicClient: PublicClient;
+  router?: Address;
   actionFilter?: LeaderboardActionFilter;
   sortBy?: LeaderboardSortBy;
   fromBlock?: bigint;
@@ -337,6 +414,7 @@ export interface GetLeaderboardSnapshotParameters {
 
 export async function getLeaderboardSnapshot({
   publicClient,
+  router,
   actionFilter = "all",
   sortBy = "users",
   fromBlock,
@@ -344,7 +422,7 @@ export async function getLeaderboardSnapshot({
   addresses = MEZO_TESTNET_ADDRESSES,
   chainId = 31611,
 }: GetLeaderboardSnapshotParameters): Promise<LeaderboardSnapshot> {
-  const startBlock = fromBlock ?? addresses.fuseRouterDeployBlock;
+  const startBlock = fromBlock ?? getDefaultScanStartBlock(addresses, router);
   const latestBlock =
     toBlock === "latest" ? await publicClient.getBlockNumber() : toBlock;
 
@@ -353,12 +431,14 @@ export async function getLeaderboardSnapshot({
       publicClient,
       fromBlock: startBlock,
       toBlock: latestBlock,
+      router,
       addresses,
     }),
     getRoutedEvents({
       publicClient,
       fromBlock: startBlock,
       toBlock: latestBlock,
+      router,
       addresses,
     }),
     getBtcUsdPrice(publicClient, addresses.skipBtcUsdOracle),
@@ -376,18 +456,28 @@ export async function getLeaderboardSnapshot({
 
   const builderConfigs = await Promise.all(
     builderAddresses.map(async (builderAddr) => {
-      const tuple = await publicClient.readContract({
-        address: addresses.fuseRouter,
-        abi: fuseRouterAbi,
-        functionName: "builders",
-        args: [builderAddr],
-      });
+      const tuple = await readBuilderConfiguration(
+        publicClient,
+        builderAddr,
+        addresses,
+        router,
+      );
+      const currentConfiguration =
+        router?.toLowerCase() === addresses.fuseRouter.toLowerCase()
+          ? tuple
+          : await readBuilderConfiguration(
+              publicClient,
+              builderAddr,
+              addresses,
+              addresses.fuseRouter,
+            );
       const [rawFeeBps, active, registered, metadataURI] = tuple;
       return {
         address: builderAddr,
         feeBps: Number(rawFeeBps),
         active,
         registered,
+        registeredOnCurrentRouter: currentConfiguration[2],
         metadataURI,
         metadata: parseBuilderMetadataURI(metadataURI, builderAddr),
       };
@@ -476,6 +566,7 @@ export async function getLeaderboardSnapshot({
       selfReported: true,
       metadata: cfg.metadata,
       registered: cfg.registered,
+      registeredOnCurrentRouter: cfg.registeredOnCurrentRouter,
       active: cfg.active,
       feeBps: cfg.feeBps,
       feePercentFormatted: formatFeeBps(cfg.feeBps),
@@ -521,7 +612,16 @@ export async function getLeaderboardSnapshot({
 
   return {
     chainId,
-    routerAddress: addresses.fuseRouter,
+    routerAddress: getAddress(router ?? addresses.fuseRouter),
+    routerDeployments: resolveRouterDeployments({
+      addresses,
+      router,
+      fromBlock,
+    }).map((deployment) => ({
+      address: getAddress(deployment.address),
+      deployBlock: deployment.deployBlock.toString(),
+      label: deployment.label,
+    })),
     fromBlock: startBlock.toString(),
     toBlock: latestBlock.toString(),
     actionFilter,
@@ -546,6 +646,7 @@ export async function getLeaderboardSnapshot({
 export interface GetBuilderAnalyticsParameters {
   publicClient: PublicClient;
   builder: Address;
+  router?: Address;
   fromBlock?: bigint;
   toBlock?: bigint | "latest";
   addresses?: FuseAddresses;
@@ -554,26 +655,23 @@ export interface GetBuilderAnalyticsParameters {
 export async function getBuilderAnalytics({
   publicClient,
   builder,
+  router,
   fromBlock,
   toBlock = "latest",
   addresses = MEZO_TESTNET_ADDRESSES,
 }: GetBuilderAnalyticsParameters): Promise<BuilderAnalyticsReport> {
   const normalizedBuilder = getAddress(builder);
-  const startBlock = fromBlock ?? addresses.fuseRouterDeployBlock;
+  const startBlock = fromBlock ?? getDefaultScanStartBlock(addresses, router);
   const latestBlock =
     toBlock === "latest" ? await publicClient.getBlockNumber() : toBlock;
 
   const [builderTuple, routedEvents, btcUsdOracle] = await Promise.all([
-    publicClient.readContract({
-      address: addresses.fuseRouter,
-      abi: fuseRouterAbi,
-      functionName: "builders",
-      args: [normalizedBuilder],
-    }),
+    readBuilderConfiguration(publicClient, normalizedBuilder, addresses, router),
     getRoutedEvents({
       publicClient,
       fromBlock: startBlock,
       toBlock: latestBlock,
+      router,
       builder: normalizedBuilder,
       addresses,
     }),

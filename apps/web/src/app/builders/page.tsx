@@ -16,11 +16,11 @@ function BuildersPageInner() {
         <p>
           Register your builder address on <code>FuseRouter</code> (
           <a
-            href="https://explorer.test.mezo.org/address/0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1"
+            href="https://explorer.test.mezo.org/address/0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4"
             target="_blank"
             rel="noreferrer"
           >
-            0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1
+            0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4
           </a>
           ), configure your fee up to the 50 bps (0.50%) protocol cap, copy
           embed snippets, and unlock paid MUSD x402 analytics.

@@ -35,6 +35,11 @@ export const MEZO_TESTNET_CHAIN: Chain = defineChain({
 export interface FuseAddresses {
   fuseRouter: Address;
   fuseRouterDeployBlock: bigint;
+  fuseRouterDeployments: readonly {
+    address: Address;
+    deployBlock: bigint;
+    label: "current" | "legacy";
+  }[];
   tigrisRouter: Address;
   poolFactory: Address;
   musdBtcPool: Address;
@@ -48,8 +53,20 @@ export interface FuseAddresses {
 }
 
 export const MEZO_TESTNET_ADDRESSES: FuseAddresses = {
-  fuseRouter: "0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1",
-  fuseRouterDeployBlock: 16_328_764n,
+  fuseRouter: "0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4",
+  fuseRouterDeployBlock: 16_569_522n,
+  fuseRouterDeployments: [
+    {
+      address: "0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1",
+      deployBlock: 16_328_764n,
+      label: "legacy",
+    },
+    {
+      address: "0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4",
+      deployBlock: 16_569_522n,
+      label: "current",
+    },
+  ],
   tigrisRouter: "0x9a1ff7FE3a0F69959A3fBa1F1e5ee18e1A9CD7E9",
   poolFactory: "0x4947243CC818b627A5D06d14C4eCe7398A23Ce1A",
   musdBtcPool: "0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9",
@@ -122,13 +139,26 @@ export const LOCK_DURATION_PRESETS: readonly LockDurationPreset[] = [
   { id: "max30d", label: "Max · 30 Days", seconds: 2_592_000, days: 30 },
 ] as const;
 
-export const DEFAULT_PAID_BUILDER_TESTNET: Address =
+export const LEGACY_PAID_BUILDER_TESTNET: Address =
   "0xFfC2625b3282D05E28dFcedE7D522c464349Ee9a";
-export const DEFAULT_ZERO_FEE_BUILDER_TESTNET: Address =
+export const LEGACY_ZERO_FEE_BUILDER_TESTNET: Address =
   "0x637A41a27e14897E72D3f9e488D4D33090DABEde";
+// Their keys were lost. They remain registered for history.
+export const RETIRED_PAID_BUILDER_TESTNET: Address =
+  "0x782bfA8870BcEeAC867452f06Cb1caa73294539a";
+export const RETIRED_ZERO_FEE_BUILDER_TESTNET: Address =
+  "0xc271fACe6B1Bab9Eb59A5F3c6eb9a6cfD9d11B53";
+export const DEFAULT_PAID_BUILDER_TESTNET: Address =
+  "0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283";
+export const DEFAULT_ZERO_FEE_BUILDER_TESTNET: Address =
+  "0x4FdA3C5A0E49B183900d155f7820E7E40BFA8A9F";
 export const FUSE_TEST_WALLETS: readonly Address[] = [
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
+  RETIRED_PAID_BUILDER_TESTNET,
+  RETIRED_ZERO_FEE_BUILDER_TESTNET,
+  LEGACY_PAID_BUILDER_TESTNET,
+  LEGACY_ZERO_FEE_BUILDER_TESTNET,
   "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0",
 ] as const;
 

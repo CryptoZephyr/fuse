@@ -187,7 +187,7 @@ export function BuildersConsole({
         <h2>3. On-Chain Builder Registration &amp; Fee Management</h2>
         <p>
           Register your connected wallet on <code>FuseRouter</code> (
-          <code>0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1</code>) or update your
+          <code>0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4</code>) or update your
           fee (<code>0 &le; feeBps &le; 50</code>), active status, and self-reported
           metadata URI.
         </p>

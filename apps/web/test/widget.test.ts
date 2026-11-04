@@ -28,10 +28,13 @@ describe("@fuse/web widget contract & constraint verification", () => {
     expect(MEZO_TESTNET_CHAIN_ID).toBe(31611);
     expect(LOCK_DURATION_PRESETS.map((p) => p.days)).toEqual([7, 14, 21, 30]);
     expect(MEZO_TESTNET_ADDRESSES.fuseRouter).toBe(
-      "0x37Bb02d6FF0080E85eccEee881a068A4b2bE81e1",
+      "0xF1E6021db0345b03055a76c8E1dAa0CC270f6DC4",
     );
     expect(DEFAULT_ZERO_FEE_BUILDER_TESTNET).toBe(
-      "0x637A41a27e14897E72D3f9e488D4D33090DABEde",
+      "0x4FdA3C5A0E49B183900d155f7820E7E40BFA8A9F",
+    );
+    expect(DEFAULT_PAID_BUILDER_TESTNET).toBe(
+      "0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283",
     );
   });
 

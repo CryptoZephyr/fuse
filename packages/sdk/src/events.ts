@@ -1,4 +1,4 @@
-import { type Address, type Hash, type PublicClient, parseAbiItem } from "viem";
+import { type Address, type Hash, type PublicClient, getAddress, parseAbiItem } from "viem";
 import {
   type FuseAddresses,
   MEZO_TESTNET_ADDRESSES,
@@ -11,6 +11,7 @@ export interface RoutedEventRecord {
   transactionHash: Hash;
   blockNumber: bigint;
   logIndex: number;
+  router: Address;
   builder: Address;
   user: Address;
   action: FuseActionType;
@@ -39,71 +40,114 @@ export interface GetRoutedEventsParameters {
   publicClient: PublicClient;
   fromBlock?: bigint;
   toBlock?: bigint | "latest";
+  router?: Address;
   builder?: Address;
   user?: Address;
   addresses?: FuseAddresses;
   chunkSize?: bigint;
 }
 
+type RouterDeployment = FuseAddresses["fuseRouterDeployments"][number];
+
+export function resolveRouterDeployments({
+  addresses = MEZO_TESTNET_ADDRESSES,
+  router,
+  fromBlock,
+}: {
+  addresses?: FuseAddresses;
+  router?: Address;
+  fromBlock?: bigint;
+}): RouterDeployment[] {
+  if (!router) return [...addresses.fuseRouterDeployments];
+
+  const deployment = addresses.fuseRouterDeployments.find(
+    (candidate) => candidate.address.toLowerCase() === router.toLowerCase(),
+  );
+  if (deployment) return [deployment];
+
+  return [
+    {
+      address: getAddress(router),
+      deployBlock: fromBlock ?? addresses.fuseRouterDeployBlock,
+      label: "current",
+    },
+  ];
+}
+
 export async function getRoutedEvents({
   publicClient,
   fromBlock,
   toBlock = "latest",
+  router,
   builder,
   user,
   addresses = MEZO_TESTNET_ADDRESSES,
   chunkSize = 9_500n,
 }: GetRoutedEventsParameters): Promise<RoutedEventRecord[]> {
-  const startBlock = fromBlock ?? addresses.fuseRouterDeployBlock;
   const latestBlock =
     toBlock === "latest" ? await publicClient.getBlockNumber() : toBlock;
-
-  if (latestBlock < startBlock) {
-    return [];
-  }
-
   const allLogs: RoutedEventRecord[] = [];
-  let cursor = startBlock;
+  const maxChunkSize = chunkSize > 10_000n ? 10_000n : chunkSize;
+  const deployments = resolveRouterDeployments({ addresses, router, fromBlock });
 
-  while (cursor <= latestBlock) {
-    const end = cursor + chunkSize - 1n > latestBlock ? latestBlock : cursor + chunkSize - 1n;
+  for (const deployment of deployments) {
+    const startBlock =
+      fromBlock !== undefined && fromBlock > deployment.deployBlock
+        ? fromBlock
+        : deployment.deployBlock;
+    if (latestBlock < startBlock) continue;
 
-    const logs = await publicClient.getLogs({
-      address: addresses.fuseRouter,
-      event: ROUTED_EVENT,
-      args: {
-        ...(builder ? { builder } : {}),
-        ...(user ? { user } : {}),
-      },
-      fromBlock: cursor,
-      toBlock: end,
-    });
+    let cursor = startBlock;
 
-    for (const log of logs) {
-      if (!log.args.builder || !log.args.user || !log.transactionHash) continue;
-      const actionCode = Number(log.args.action);
-      const action = mapActionCodeToType(actionCode);
-      if (!action) continue;
-      allLogs.push({
-        transactionHash: log.transactionHash,
-        blockNumber: log.blockNumber ?? 0n,
-        logIndex: Number(log.logIndex ?? 0),
-        builder: log.args.builder,
-        user: log.args.user,
-        action,
-        actionCode,
-        tokenIn: log.args.tokenIn!,
-        amountIn: log.args.amountIn ?? 0n,
-        fee: log.args.fee ?? 0n,
-        tokenOut: log.args.tokenOut!,
-        amountOut: log.args.amountOut ?? 0n,
-        lockId: log.args.lockId ?? 0n,
-        explorerTxUrl: getExplorerTxUrl(log.transactionHash),
+    while (cursor <= latestBlock) {
+      const end =
+        cursor + maxChunkSize - 1n > latestBlock
+          ? latestBlock
+          : cursor + maxChunkSize - 1n;
+
+      const logs = await publicClient.getLogs({
+        address: deployment.address,
+        event: ROUTED_EVENT,
+        args: {
+          ...(builder ? { builder } : {}),
+          ...(user ? { user } : {}),
+        },
+        fromBlock: cursor,
+        toBlock: end,
       });
-    }
 
-    cursor = end + 1n;
+      for (const log of logs) {
+        if (!log.args.builder || !log.args.user || !log.transactionHash) continue;
+        const actionCode = Number(log.args.action);
+        const action = mapActionCodeToType(actionCode);
+        if (!action) continue;
+        allLogs.push({
+          transactionHash: log.transactionHash,
+          blockNumber: log.blockNumber ?? 0n,
+          logIndex: Number(log.logIndex ?? 0),
+          router: deployment.address,
+          builder: log.args.builder,
+          user: log.args.user,
+          action,
+          actionCode,
+          tokenIn: log.args.tokenIn!,
+          amountIn: log.args.amountIn ?? 0n,
+          fee: log.args.fee ?? 0n,
+          tokenOut: log.args.tokenOut!,
+          amountOut: log.args.amountOut ?? 0n,
+          lockId: log.args.lockId ?? 0n,
+          explorerTxUrl: getExplorerTxUrl(log.transactionHash),
+        });
+      }
+
+      cursor = end + 1n;
+    }
   }
 
-  return allLogs;
+  return allLogs.sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) {
+      return a.blockNumber < b.blockNumber ? -1 : 1;
+    }
+    return a.logIndex - b.logIndex;
+  });
 }
