@@ -385,9 +385,9 @@ export class FuseClient {
         data: built.data,
         value: built.value,
       });
-      // Add 25% buffer and enforce >= 150,000 floor to avoid EIP-7623 gas floor issues on Mezo Testnet RPC
+      // Use the per-action fallback as a minimum because Mezo RPC estimates can be stale.
       const buffered = (estimated * 125n) / 100n;
-      gas = buffered > 150_000n ? buffered : 150_000n;
+      gas = buffered > fallbackGasLimit ? buffered : fallbackGasLimit;
     } catch (error) {
       if (isExecutionRevert(error)) throw error;
       gas = fallbackGasLimit;
@@ -498,6 +498,7 @@ export class FuseClient {
   async getRoutedEvents(params?: {
     fromBlock?: bigint;
     toBlock?: bigint | "latest";
+    router?: Address;
     builder?: Address;
     user?: Address;
   }): Promise<RoutedEventRecord[]> {

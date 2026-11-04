@@ -4,6 +4,7 @@ import {
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
   FuseClient,
+  LEGACY_PAID_BUILDER_TESTNET,
   MEZO_TESTNET_ADDRESSES,
   MEZO_TESTNET_CHAIN,
   MEZO_TESTNET_RPC_URL,
@@ -89,9 +90,13 @@ describe("@fuse/sdk live Mezo Testnet integration tests", () => {
   }, 25_000);
 
   it("queries real on-chain Routed events emitted by FuseRouter since deploy block 16328764", async () => {
+    const legacyDeployment = MEZO_TESTNET_ADDRESSES.fuseRouterDeployments.find(
+      (deployment) => deployment.label === "legacy",
+    )!;
     const events = await fuse.getRoutedEvents({
-      fromBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
-      toBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock + 600n,
+      router: legacyDeployment.address,
+      fromBlock: legacyDeployment.deployBlock,
+      toBlock: legacyDeployment.deployBlock + 600n,
     });
 
     expect(events.length).toBeGreaterThanOrEqual(6);
@@ -102,17 +107,22 @@ describe("@fuse/sdk live Mezo Testnet integration tests", () => {
   }, 25_000);
 
   it("aggregates live leaderboard snapshot and per-builder analytics with Skip BTC/USD valuation", async () => {
+    const legacyDeployment = MEZO_TESTNET_ADDRESSES.fuseRouterDeployments.find(
+      (deployment) => deployment.label === "legacy",
+    )!;
     const [leaderboard, analytics] = await Promise.all([
       getLeaderboardSnapshot({
         publicClient,
-        fromBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
-        toBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock + 1000n,
+        router: legacyDeployment.address,
+        fromBlock: legacyDeployment.deployBlock,
+        toBlock: legacyDeployment.deployBlock + 1000n,
       }),
       getBuilderAnalytics({
         publicClient,
-        builder: DEFAULT_PAID_BUILDER_TESTNET,
-        fromBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock,
-        toBlock: MEZO_TESTNET_ADDRESSES.fuseRouterDeployBlock + 1000n,
+        builder: LEGACY_PAID_BUILDER_TESTNET,
+        router: legacyDeployment.address,
+        fromBlock: legacyDeployment.deployBlock,
+        toBlock: legacyDeployment.deployBlock + 1000n,
       }),
     ]);
 
@@ -121,7 +131,7 @@ describe("@fuse/sdk live Mezo Testnet integration tests", () => {
     expect(leaderboard.btcUsdOracle).not.toBeNull();
     expect(leaderboard.builders[0].selfReported).toBe(true);
 
-    expect(analytics.builder).toBe(DEFAULT_PAID_BUILDER_TESTNET);
+    expect(analytics.builder).toBe(LEGACY_PAID_BUILDER_TESTNET);
     expect(analytics.registered).toBe(true);
     expect(analytics.feeBps).toBe(15);
     expect(analytics.summary.totalActions).toBeGreaterThanOrEqual(5);
