@@ -11,7 +11,7 @@ import {
   getExplorerAddressUrl,
   resolveTokenSymbol,
   shortenAddress,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 import { useBuilderConsole } from "../hooks/useBuilderConsole";
 
 export interface BuildersConsoleProps {
@@ -383,7 +383,7 @@ export function BuildersConsole({
 
         <div>
           <h3>
-            C. Headless TypeScript <code>@fuse/sdk</code> Client
+            C. Headless TypeScript <code>mezo-fuse</code> Client
           </h3>
           <button
             type="button"
@@ -392,7 +392,7 @@ export function BuildersConsole({
               void copyToClipboard("sdk", state.snippets.sdkSnippet)
             }
           >
-            {copiedSnippet === "sdk" ? "Copied!" : "Copy @fuse/sdk Snippet"}
+            {copiedSnippet === "sdk" ? "Copied!" : "Copy mezo-fuse Snippet"}
           </button>
           <pre data-fuse-snippet="sdk">
             <code>{state.snippets.sdkSnippet}</code>

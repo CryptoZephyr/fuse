@@ -10,7 +10,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@fuse/sdk':
+      mezo-fuse:
         specifier: workspace:*
         version: link:../../packages/sdk
       '@mezo-org/passport':

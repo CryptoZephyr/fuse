@@ -35,7 +35,7 @@ import {
   decodeFuseError,
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 export interface UseFuseWidgetOptions {
   builderAddress?: string | null;

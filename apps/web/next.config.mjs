@@ -8,7 +8,7 @@ const nextConfig = {
    * entrypoints and must be transpiled by Next.js.
    */
   transpilePackages: [
-    "@fuse/sdk",
+    "mezo-fuse",
     "@mezo-org/passport",
     "@mezo-org/orangekit",
     "@mezo-org/orangekit-smart-account",

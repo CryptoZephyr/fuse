@@ -13,7 +13,7 @@ import {
   formatUsd,
   getExplorerAddressUrl,
   shortenAddress,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 import { useFuseWidget } from "../hooks/useFuseWidget";
 
 export interface FuseWidgetProps {

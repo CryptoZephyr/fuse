@@ -5,7 +5,7 @@ import {
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
   MEZO_TESTNET_ADDRESSES,
   getExplorerAddressUrl,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 export default function DocsPage() {
   return (
@@ -77,7 +77,7 @@ export default function PartnerPage() {
 }`}</code>
         </pre>
 
-        <h3>Option C: Headless TypeScript SDK (<code>@fuse/sdk</code>)</h3>
+        <h3>Option C: Headless TypeScript SDK (<code>mezo-fuse</code>)</h3>
         <pre data-fuse-doc-snippet="sdk">
           <code>{`import { createPublicClient, http, parseUnits } from "viem";
 import {
@@ -85,7 +85,7 @@ import {
   FuseClient,
   MEZO_TESTNET_CHAIN,
   MEZO_TESTNET_RPC_URL,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 const publicClient = createPublicClient({
   chain: MEZO_TESTNET_CHAIN,
@@ -374,7 +374,7 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
             single on-chain transaction. For Bitcoin wallets connected via Mezo
             Passport / OrangeKit smart accounts where{" "}
             <code>eth_signTypedData_v4</code> throws{" "}
-            <code>Unsupported method</code>, <code>@fuse/sdk</code>{" "}
+            <code>Unsupported method</code>, <code>mezo-fuse</code>{" "}
             automatically falls back to the 2-step ERC-20{" "}
             <code>approve</code> + <code>save</code>/<code>swap</code> flow.
           </dd>
@@ -441,7 +441,7 @@ console.log("Explorer URL:", tx.explorerUrl);`}</code>
           <code>{`import {
   createMusdX402PaymentPayload,
   type X402PaymentRequired,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 // 1. Request analytics -> receive HTTP 402 challenge
 const res402 = await fetch("/api/analytics/${DEFAULT_PAID_BUILDER_TESTNET}");

@@ -25,7 +25,7 @@ import {
   createMusdX402PaymentPayload,
   decodeFuseError,
   getExplorerTxUrl,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 export interface UseBuilderConsoleOptions {
   initialBuilderAddress?: string | null;
@@ -369,7 +369,7 @@ export function MyMezoIntegration() {
 }`;
 
     const sdkSnippet = `import { createPublicClient, http, parseUnits } from "viem";
-import { FuseClient, MEZO_TESTNET_CHAIN, MEZO_TESTNET_RPC_URL } from "@fuse/sdk";
+import { FuseClient, MEZO_TESTNET_CHAIN, MEZO_TESTNET_RPC_URL } from "mezo-fuse";
 
 const publicClient = createPublicClient({
   chain: MEZO_TESTNET_CHAIN,

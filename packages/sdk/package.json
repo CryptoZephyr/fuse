@@ -1,9 +1,26 @@
 {
-  "name": "@fuse/sdk",
+  "name": "mezo-fuse",
   "version": "0.1.0",
-  "description": "TypeScript SDK for FuseRouter on Mezo Testnet (quotes, transaction builders, MUSD permit flows, Skip BTC/USD oracle, builder approvals)",
+  "description": "TypeScript SDK for FuseRouter on Mezo testnet: swaps, saves, locks, builder fee approvals and Routed event reads",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CryptoZephyr/fuse.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/CryptoZephyr/fuse#readme",
+  "keywords": [
+    "mezo",
+    "bitcoin",
+    "defi",
+    "builder-codes",
+    "viem"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -20,7 +37,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:live": "vitest run test/sdk.live.test.ts"
+    "test:live": "vitest run test/sdk.live.test.ts",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "viem": "^2.22.8"

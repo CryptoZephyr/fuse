@@ -11,7 +11,7 @@ import {
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
   parseBuilderMetadataURI,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 describe("@fuse/web widget contract & constraint verification", () => {
   it("enforces DESIGN_SYSTEM.md and FRONTEND.md builder self-reported metadata constraint", () => {

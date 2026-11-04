@@ -7,7 +7,7 @@ import {
   MEZO_TESTNET_CHAIN,
   MEZO_TESTNET_RPC_URL,
   getLeaderboardSnapshot,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 export const dynamic = "force-dynamic";
 

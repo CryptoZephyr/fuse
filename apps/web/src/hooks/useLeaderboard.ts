@@ -5,7 +5,7 @@ import type {
   LeaderboardActionFilter,
   LeaderboardSnapshot,
   LeaderboardSortBy,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 
 export interface UseLeaderboardOptions {
   initialAction?: LeaderboardActionFilter;

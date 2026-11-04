@@ -7,7 +7,7 @@ import {
   type LeaderboardSortBy,
   getExplorerAddressUrl,
   shortenAddress,
-} from "@fuse/sdk";
+} from "mezo-fuse";
 import { useLeaderboard } from "../../hooks/useLeaderboard";
 
 export default function LeaderboardPage() {
