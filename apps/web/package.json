@@ -2,7 +2,7 @@
   "name": "@fuse/web",
   "version": "0.1.0",
   "private": true,
-  "description": "Fuse web app and embeddable Mezo builder widget (plain unstyled per DESIGN_SYSTEM.md)",
+  "description": "Fuse web app and embeddable Mezo builder widget",
   "license": "MIT",
   "scripts": {
     "dev": "next dev -p 3000",
