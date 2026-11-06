@@ -7,6 +7,7 @@ import {
   formatUnits,
   http,
   isAddress,
+  parseEventLogs,
   parseUnits,
 } from "viem";
 import { useConfig, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
@@ -29,6 +30,7 @@ import {
   MEZO_TESTNET_CHAIN_ID,
   MEZO_TESTNET_RPC_URL,
   MEZO_TOKENS,
+  fuseRouterAbi,
   type MezoTokenSymbol,
   type SaveQuote,
   type SwapQuote,
@@ -438,6 +440,30 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
           onStep: (step) => setExecutionStep(step),
         });
       }
+
+      setExecutionStep("action_tx_confirming");
+      const routedLogs = parseEventLogs({
+        abi: fuseRouterAbi,
+        eventName: "Routed",
+        logs: result.receipt.logs,
+        strict: false,
+      });
+      const receiptRouter = result.receipt.to?.toLowerCase();
+      const hasMatchingRoutedEvent = routedLogs.some((log) => {
+        const args = log.args;
+        return Boolean(
+          receiptRouter &&
+            log.address.toLowerCase() === receiptRouter &&
+            args.builder?.toLowerCase() === builderAddress.toLowerCase() &&
+            args.user?.toLowerCase() === accountAddress?.toLowerCase(),
+        );
+      });
+      if (!hasMatchingRoutedEvent) {
+        throw new Error(
+          "The successful receipt did not contain a matching Fuse Routed event. Open the receipt page to verify the transaction.",
+        );
+      }
+
       setLastResult(result);
       await refreshOnChainState();
     } catch (err) {
@@ -448,6 +474,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     }
   }, [
     activeTab,
+    accountAddress,
     builderAddress,
     fuseClient,
     lockDurationSeconds,
