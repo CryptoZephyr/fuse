@@ -144,6 +144,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     lockQuote,
     quoteLoading,
     quoteError,
+    quoteUpdatedAt,
     approvalPending,
     revokePending,
     actionPending,
@@ -169,9 +170,10 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     parsedAmountWei > 0n &&
     !isInsufficientBalance &&
     !quoteLoading &&
+    Boolean(quoteUpdatedAt) &&
     !actionPending &&
     (activeTab !== "lock" || lockWarningAcknowledged) &&
-    (activeTab !== "swap" || Boolean(swapQuote));
+    (activeTab === "swap" ? Boolean(swapQuote) : activeTab === "save" ? Boolean(saveQuote) : Boolean(lockQuote));
 
   const feeBps = builderStatus?.feeBps ?? 0;
   const isCapApproved = Boolean(
