@@ -4,7 +4,12 @@ import React, { useState } from "react";
 import "@rainbow-me/rainbowkit/styles.css";
 import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
 import {
+  injectedWallet,
+  metaMaskWallet,
+} from "@rainbow-me/rainbowkit/wallets";
+import {
   PassportProvider,
+  getDefaultWallets,
   getConfig,
   mezoTestnet,
 } from "@mezo-org/passport";
@@ -16,11 +21,26 @@ const WALLETCONNECT_PROJECT_ID =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ||
   "3a8170812b534d0ff9d794f19a901d64";
 
+const defaultPassportWallets = getDefaultWallets("testnet");
+
+const fuseWallets = [
+  defaultPassportWallets[0],
+  {
+    groupName: "Ethereum",
+    wallets: [
+      metaMaskWallet,
+      injectedWallet,
+      ...defaultPassportWallets[1].wallets,
+    ],
+  },
+];
+
 export const fuseWagmiConfig = getConfig({
   appName: "Fuse: Mezo Builder Router (Testnet)",
   appDescription: "Builder codes and distribution router for Mezo Testnet",
   mezoNetwork: "testnet",
   walletConnectProjectId: WALLETCONNECT_PROJECT_ID,
+  wallets: fuseWallets,
   ssr: true,
 });
 
