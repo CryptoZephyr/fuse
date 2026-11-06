@@ -989,7 +989,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   padding: "10px 12px",
                 }}
               >
-                <div className="fuse-eyebrow">SAVINGS SHARES RECEIVED</div>
+                <div className="fuse-eyebrow">
+                  {saveQuote.sharesOutIsEstimated
+                    ? "ESTIMATED SAVINGS SHARES"
+                    : "SAVINGS SHARES RECEIVED"}
+                </div>
                 <div
                   className="fuse-num"
                   style={{
@@ -1029,7 +1033,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
 
               <dl className="fuse-receipt" data-fuse-section="quote-breakdown">
                 <div className="fuse-receipt__row">
-                  <dt className="fuse-receipt__term">Savings shares received</dt>
+                  <dt className="fuse-receipt__term">
+                    {saveQuote.sharesOutIsEstimated
+                      ? "Estimated savings shares"
+                      : "Savings shares received"}
+                  </dt>
                   <span className="fuse-receipt__dots" />
                   <dd className="fuse-receipt__val" data-fuse-field="min-received">
                     <strong>{formatTokenAmount(saveQuote.sharesOut, 18)} sMUSD</strong>

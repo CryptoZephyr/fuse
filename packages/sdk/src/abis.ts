@@ -560,6 +560,13 @@ export const erc20PermitAbi = [
 export const musdSavingsVaultAbi = [
   {
     type: "function",
+    name: "previewDeposit",
+    inputs: [{ name: "assets", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "shares", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "deposit",
     inputs: [{ name: "amount", type: "uint256", internalType: "uint256" }],
     outputs: [],
