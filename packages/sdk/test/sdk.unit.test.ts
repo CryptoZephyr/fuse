@@ -252,6 +252,47 @@ describe("mezo-fuse unit tests", () => {
     expect(lockTx.to).toBe(MEZO_TESTNET_ADDRESSES.fuseRouter);
   });
 
+  it("uses the deployed router max lock duration before submitting a lock", async () => {
+    const txHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const amount = parseUnits("0.0001", 18);
+    const maxLockDurationSeconds = 3_456_000n;
+    const readContract = vi.fn().mockImplementation(
+      async ({ functionName }: { functionName: string }) => {
+        if (functionName === "maxLockDuration") return maxLockDurationSeconds;
+        if (functionName === "allowance") return amount;
+        return 0n;
+      },
+    );
+    const sendTransaction = vi.fn().mockResolvedValue(txHash);
+    const client = new FuseClient({
+      publicClient: {
+        readContract,
+        estimateGas: vi.fn().mockResolvedValue(100_000n),
+        waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
+      } as any,
+      walletClient: {
+        account: { address: "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0" },
+        chain: null,
+        sendTransaction,
+      } as any,
+    });
+
+    const result = await client.executeLock({
+      builder: DEFAULT_PAID_BUILDER_TESTNET,
+      amount,
+      lockDurationSeconds: 3_000_000,
+    });
+
+    expect(result.txHash).toBe(txHash);
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: MEZO_TESTNET_ADDRESSES.fuseRouter,
+        functionName: "maxLockDuration",
+      }),
+    );
+    expect(sendTransaction).toHaveBeenCalledTimes(1);
+  });
+
   it("automatically falls back to ERC-20 approve + save when signTypedData throws Unsupported method", async () => {
     const steps: string[] = [];
     const mockPublicClient = {

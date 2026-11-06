@@ -18,7 +18,6 @@ import {
   MEZO_TESTNET_ADDRESSES,
   MEZO_TESTNET_CHAIN_ID,
   MIN_LOCK_DURATION_SECONDS,
-  TESTNET_MAX_LOCK_DURATION_SECONDS,
   getExplorerTxUrl,
 } from "./addresses.js";
 import { type BuilderStatus, getBuilderStatus } from "./builders.js";
@@ -824,12 +823,20 @@ export class FuseClient {
     const { address } = this.requireWallet();
     const { builder, amount, lockDurationSeconds, onStep } = params;
 
+    const maxLockDurationSeconds = Number(
+      await this.publicClient.readContract({
+        address: this.addresses.fuseRouter,
+        abi: fuseRouterAbi,
+        functionName: "maxLockDuration",
+      }),
+    );
+
     if (
       lockDurationSeconds < MIN_LOCK_DURATION_SECONDS ||
-      lockDurationSeconds > TESTNET_MAX_LOCK_DURATION_SECONDS
+      lockDurationSeconds > maxLockDurationSeconds
     ) {
       throw new Error(
-        `InvalidLockDuration: Lock duration (${lockDurationSeconds}s) must be between ${MIN_LOCK_DURATION_SECONDS}s (7 days) and ${TESTNET_MAX_LOCK_DURATION_SECONDS}s (30 days) on Mezo Testnet.`,
+        `InvalidLockDuration: Lock duration (${lockDurationSeconds}s) must be between ${MIN_LOCK_DURATION_SECONDS}s (7 days) and ${maxLockDurationSeconds}s (${Math.round(maxLockDurationSeconds / 86400)} days) on Mezo Testnet.`,
       );
     }
 
