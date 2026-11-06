@@ -144,6 +144,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     lockQuote,
     quoteLoading,
     quoteError,
+    quoteUpdatedAt,
     approvalPending,
     revokePending,
     actionPending,
@@ -169,15 +170,16 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     parsedAmountWei > 0n &&
     !isInsufficientBalance &&
     !quoteLoading &&
+    Boolean(quoteUpdatedAt) &&
     !actionPending &&
     (activeTab !== "lock" || lockWarningAcknowledged) &&
-    (activeTab !== "swap" || Boolean(swapQuote));
+    (activeTab === "swap" ? Boolean(swapQuote) : activeTab === "save" ? Boolean(saveQuote) : Boolean(lockQuote));
 
   const feeBps = builderStatus?.feeBps ?? 0;
-  const isCapApprovedOrZero = Boolean(
+  const isCapApproved = Boolean(
     builderStatus &&
-      (builderStatus.feeBps === 0 ||
-        (!builderStatus.needsApproval && !builderStatus.needsHigherApproval)),
+      !builderStatus.needsApproval &&
+      !builderStatus.needsHigherApproval,
   );
 
   // Determine FuseStrip mode
@@ -189,12 +191,12 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
       fuseStripMode = "builder-unregistered";
     } else if (!builderStatus.active) {
       fuseStripMode = "builder-inactive";
-    } else if (builderStatus.feeBps === 0) {
-      fuseStripMode = "zero-fee";
     } else if (builderStatus.needsHigherApproval) {
       fuseStripMode = "tripped";
     } else if (builderStatus.needsApproval) {
       fuseStripMode = "needs-approval";
+    } else if (builderStatus.feeBps === 0) {
+      fuseStripMode = "zero-fee";
     } else {
       fuseStripMode = "within-cap";
     }
@@ -245,7 +247,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
         isConnected={isConnected}
         isWrongNetwork={isWrongNetwork}
         feeBps={feeBps}
-        isCapApprovedOrZero={isCapApprovedOrZero}
+        isCapApprovedOrZero={isCapApproved}
         actionLabel={actionStepLabel}
         hasConfirmedReceipt={Boolean(lastResult)}
       />
@@ -436,7 +438,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   >
                     <span style={{ color: "#4E535A" }}>
                       {builderStatus.feeBps === 0 ? (
-                        <>No fee. No approval needed.</>
+                        <>No partner fee. Your approval is active.</>
                       ) : (
                         <>
                           Your cap:{" "}
@@ -455,7 +457,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                       >
                         Manage all caps
                       </Link>
-                      {builderStatus.feeBps > 0 && (
+                      {builderStatus.userApproved && (
                         <button
                           type="button"
                           disabled={revokePending || isWrongNetwork}
@@ -989,7 +991,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   padding: "10px 12px",
                 }}
               >
-                <div className="fuse-eyebrow">SAVINGS SHARES RECEIVED</div>
+                <div className="fuse-eyebrow">
+                  {saveQuote.sharesOutIsEstimated
+                    ? "ESTIMATED SAVINGS SHARES"
+                    : "SAVINGS SHARES RECEIVED"}
+                </div>
                 <div
                   className="fuse-num"
                   style={{
@@ -1029,7 +1035,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
 
               <dl className="fuse-receipt" data-fuse-section="quote-breakdown">
                 <div className="fuse-receipt__row">
-                  <dt className="fuse-receipt__term">Savings shares received</dt>
+                  <dt className="fuse-receipt__term">
+                    {saveQuote.sharesOutIsEstimated
+                      ? "Estimated savings shares"
+                      : "Savings shares received"}
+                  </dt>
                   <span className="fuse-receipt__dots" />
                   <dd className="fuse-receipt__val" data-fuse-field="min-received">
                     <strong>{formatTokenAmount(saveQuote.sharesOut, 18)} sMUSD</strong>

@@ -70,13 +70,11 @@ const quote = await fuse.getSaveQuote({
   amountIn: parseUnits("10", 18),
 });
 
-// 2. Approve builder fee once (only needed when builder feeBps > 0)
-if (quote.feeBps > 0) {
-  await fuse.approveBuilder({
-    builder: DEFAULT_PAID_BUILDER_TESTNET,
-    maxFeeBps: quote.feeBps,
-  });
-}
+// 2. Approve the builder fee cap once, including when feeBps is 0
+await fuse.approveBuilder({
+  builder: DEFAULT_PAID_BUILDER_TESTNET,
+  maxFeeBps: quote.feeBps,
+});
 
 // 3. Execute Save (uses 1-tx EIP-2612 MUSD permit on EVM wallets, or automatic 2-step approve+save on Bitcoin Smart Accounts)
 const tx = await fuse.executeSave({
@@ -527,7 +525,8 @@ console.log("x402 Settlement Tx:", x402.explorerUrl);`;
                 </li>
                 <li>
                   <strong style={{ color: "#141619" }}>Explicit Per-User Fee Approval:</strong>{" "}
-                  When a registered, active builder has <code>feeBps &gt; 0</code>,{" "}
+                  When a registered, active builder is used, including a builder at{" "}
+                  <code>feeBps = 0</code>,{" "}
                   <code>FuseRouter</code> verifies{" "}
                   <code>userBuilderApproval[msg.sender][builder]</code> and{" "}
                   <code>userMaxFeeBps[msg.sender][builder] &gt;= builder.feeBps</code>.
@@ -538,10 +537,10 @@ console.log("x402 Settlement Tx:", x402.explorerUrl);`;
                 </li>
                 <li>
                   <strong style={{ color: "#141619" }}>Zero-Fee Attribution Mode (0 bps):</strong>{" "}
-                  Builders can register with <code>feeBps = 0</code> (or pass an
-                  unregistered / inactive builder address) to receive full on-chain{" "}
-                  <code>Routed</code> event attribution without deducting any fee or
-                  requiring a prior <code>approveBuilder</code> transaction.
+                  Builders can register with <code>feeBps = 0</code> to receive full
+                  on-chain <code>Routed</code> event attribution without deducting a
+                  fee. The user still needs an explicit{" "}
+                  <code>approveBuilder(builder, 0)</code> approval before routing.
                 </li>
                 <li>
                   <strong style={{ color: "#141619" }}>Self-Reported Builder Names:</strong>{" "}

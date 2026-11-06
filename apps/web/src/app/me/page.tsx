@@ -1,7 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import Link from "next/link";
+import { isAddress } from "viem";
+import { useAccount } from "wagmi";
 import {
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
@@ -15,10 +17,29 @@ import {
   FuseWalletControl,
 } from "../../components/SwitchgearPrimitives";
 import { useLeaderboard } from "../../hooks/useLeaderboard";
+import { useUserBuilderCaps } from "../../hooks/useUserBuilderCaps";
 
 export default function UserCapsPage() {
   const { snapshot, isLoading } = useLeaderboard({ initialSort: "users" });
   const buildersList = snapshot?.builders ?? [];
+  const { isConnected } = useAccount();
+  const builderAddresses = useMemo(
+    () => buildersList.map((builder) => builder.builder).filter((builder) => isAddress(builder)),
+    [buildersList],
+  );
+  const {
+    statuses,
+    isLoading: isLoadingCaps,
+    error: capsError,
+    actionBuilder,
+    action,
+    actionError,
+    lastActionExplorerUrl,
+    approveBuilder,
+    revokeBuilder,
+  } = useUserBuilderCaps(builderAddresses);
+
+  const getBuilderStatus = (builder: string) => statuses[builder.toLowerCase()];
 
   return (
     <FuseShell btcUsdFormatted={snapshot?.btcUsdOracle?.formattedUsd}>
@@ -93,6 +114,25 @@ export default function UserCapsPage() {
           </div>
         </section>
 
+        {capsError && (
+          <div role="alert" className="fuse-alert fuse-alert--tripped" style={{ marginBottom: "16px" }}>
+            <strong>Could not read your caps:</strong> {capsError}
+          </div>
+        )}
+        {actionError && (
+          <div role="alert" className="fuse-alert fuse-alert--tripped" style={{ marginBottom: "16px" }}>
+            <strong>Cap update failed:</strong> {actionError}
+          </div>
+        )}
+        {lastActionExplorerUrl && (
+          <div role="status" className="fuse-alert fuse-alert--approved" style={{ marginBottom: "16px" }}>
+            Cap update confirmed. {" "}
+            <a href={lastActionExplorerUrl} target="_blank" rel="noreferrer">
+              View transaction ↗
+            </a>
+          </div>
+        )}
+
         {/* Builders Cap Table */}
         <section aria-label="Registered Builders and Cap Controls">
           <div
@@ -133,7 +173,37 @@ export default function UserCapsPage() {
                     </tr>
                   ))
                 ) : buildersList.length > 0 ? (
-                  buildersList.map((b) => (
+                  buildersList.map((b) => {
+                    const status = getBuilderStatus(b.builder);
+                    const isPending = actionBuilder?.toLowerCase() === b.builder.toLowerCase();
+                    const protectionText = !isConnected
+                      ? "Connect wallet to read your cap"
+                      : isLoadingCaps && !status
+                        ? "Reading your on-chain cap..."
+                        : !status
+                          ? "Cap unavailable"
+                          : !status.active
+                            ? "Partner inactive. Cap can still be managed."
+                          : status.needsHigherApproval
+                            ? `Blocked above your ${status.userMaxFeeBps} bps cap`
+                            : status.userApproved
+                              ? `Approved up to ${status.userMaxFeePercentFormatted}`
+                              : "Approval required, including at 0 bps";
+                    const statusLabel = !isConnected
+                      ? "Connect wallet"
+                      : isLoadingCaps && !status
+                        ? "Reading..."
+                        : !status
+                          ? "Unavailable"
+                          : !status.active
+                            ? "Inactive"
+                          : status.needsHigherApproval
+                            ? "Blocked"
+                            : status.userApproved
+                              ? "Approved"
+                              : "Approval needed";
+
+                    return (
                     <tr key={b.builder}>
                       <td>
                         <Link
@@ -158,36 +228,69 @@ export default function UserCapsPage() {
                       <td>
                         <span
                           className={`fuse-status-chip ${
-                            b.active
+                            status?.active ?? b.active
                               ? "fuse-status-chip--approved"
                               : "fuse-status-chip--zero-fee"
                           }`}
                         >
-                          {b.active ? "Active" : "Inactive"}
+                          {statusLabel}
                         </span>
                       </td>
                       <td className="fuse-num fuse-mono">
-                        {b.feeBps === 0
+                        {(status?.feeBps ?? b.feeBps) === 0
                           ? "0.00% (free)"
-                          : `${b.feePercentFormatted} (${b.feeBps} bps)`}
+                          : `${status?.feePercentFormatted ?? b.feePercentFormatted} (${status?.feeBps ?? b.feeBps} bps)`}
                       </td>
                       <td style={{ fontSize: "13px", color: "#4E535A" }}>
-                        {b.feeBps === 0
-                          ? "No cap needed"
-                          : "Blocked if the fee goes above your cap"}
+                        {protectionText}
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          {status && !status.userApproved && (
+                            <button
+                              type="button"
+                              className="fuse-btn fuse-btn--primary fuse-btn--sm"
+                              disabled={isPending}
+                              onClick={() => void approveBuilder(status.address, status.feeBps)}
+                            >
+                              {isPending && action === "approve"
+                                ? "Approving..."
+                                : `Approve ${status.feePercentFormatted}`}
+                            </button>
+                          )}
+                          {status?.needsHigherApproval && (
+                            <button
+                              type="button"
+                              className="fuse-btn fuse-btn--primary fuse-btn--sm"
+                              disabled={isPending}
+                              onClick={() => void approveBuilder(status.address, status.feeBps)}
+                            >
+                              {isPending && action === "approve"
+                                ? "Approving..."
+                                : `Raise to ${status.feePercentFormatted}`}
+                            </button>
+                          )}
+                          {status?.userApproved && (
+                            <button
+                              type="button"
+                              className="fuse-btn fuse-btn--quiet fuse-btn--sm"
+                              disabled={isPending}
+                              onClick={() => void revokeBuilder(status.address)}
+                            >
+                              {isPending && action === "revoke" ? "Revoking..." : "Revoke"}
+                            </button>
+                          )}
                           <Link
                             href={`/widget?builder=${b.builder}&action=save`}
                             className="fuse-btn fuse-btn--secondary fuse-btn--sm"
                           >
-                            {b.feeBps === 0 ? "Try in widget" : "Manage cap"}
+                            Open widget
                           </Link>
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#4E535A" }}>

@@ -292,7 +292,6 @@ export function BuilderRatingPlate({
   userMaxFeePercentFormatted = "0.00%",
   showProfileLink = true,
 }: BuilderRatingPlateProps) {
-  const isZeroFee = feeBps === 0 || !registered || !active;
   const isTripped =
     isConnected &&
     registered &&
@@ -325,8 +324,16 @@ export function BuilderRatingPlate({
   }
 
   let capDisplay = "Connect wallet to view";
-  if (isZeroFee) {
-    capDisplay = "No cap needed (0%)";
+  if (!registered || !active) {
+    capDisplay = "Cap unavailable while partner is inactive";
+  } else if (feeBps === 0) {
+    if (!isConnected) {
+      capDisplay = "Connect wallet to approve 0% fee";
+    } else if (!userApproved) {
+      capDisplay = "Approval required at 0 bps";
+    } else {
+      capDisplay = "Approved at 0 bps";
+    }
   } else if (isConnected) {
     if (!userApproved) {
       capDisplay = "Not approved yet";
@@ -549,10 +556,12 @@ export function FuseStrip({
           <FuseIntactSchematicSvg color="#141619" />
           <div>
             <div className="fuse-mono" style={{ fontWeight: 700, fontSize: "12px" }}>
-              {mode === "zero-fee" ? "0% partner fee (No approval needed)" : "Partner unavailable"}
+              {mode === "zero-fee" ? "0% partner fee" : "Partner unavailable"}
             </div>
             <div style={{ fontSize: "12px", color: "#4E535A", marginTop: "2px" }}>
-              {reasonText}
+              {mode === "zero-fee"
+                ? "Your explicit approval is active, and the partner will deduct no fee."
+                : reasonText}
             </div>
           </div>
         </div>
@@ -737,7 +746,7 @@ export function WidgetStepStrip({
     },
     {
       index: 2,
-      label: feeBps === 0 ? "2. 0% fee" : "2. Approve cap",
+      label: feeBps === 0 && isCapApprovedOrZero ? "2. 0% fee" : "2. Approve cap",
       done: step2Done,
     },
     {

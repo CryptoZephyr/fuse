@@ -9,7 +9,7 @@ Mezo testnet only (chain ID `31611`). There's no hosted app yet, and the UI is u
 ## How it works
 
 1. A builder registers on `FuseRouter` with a fee from 0 to 50 bps and a metadata URI. Anyone can register.
-2. Before a paid builder can charge them, a user approves a fee cap for that builder. Zero-fee builders need no approval.
+2. Before any registered builder can route for them, a user approves a fee cap for that builder. A zero-fee builder still requires an explicit 0 bps approval.
 3. The user swaps on Tigris, saves into the MUSD Savings Vault or locks BTC as veBTC through the router.
 4. The router takes the builder fee, sends the rest to Mezo and emits a `Routed` event with the builder, user, amounts and fee.
 5. The leaderboard and paid analytics are built from those events.
@@ -96,7 +96,7 @@ All guides use Mezo testnet. You need a wallet on chain ID `31611` with some tes
 
 1. Open `http://localhost:3000/widget?builder=0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283&action=save`. This uses the 15 bps demo builder. Change `action` to `swap` or `lock` for the other actions.
 2. Connect your wallet and switch to Mezo testnet when the widget asks.
-3. Approve the builder's fee. This sets the most that builder can ever charge you. It doesn't give the builder access to your funds, and you can revoke it at any time. Zero-fee builders skip this step.
+3. Approve the builder's fee. This sets the most that builder can ever charge you. It doesn't give the builder access to your funds, and you can revoke it at any time. For a zero-fee builder, approve a 0 bps cap.
 4. Enter an amount, check the fee and what you'll get, then sign. Saving and swapping MUSD needs one signature where your wallet supports permits, and two transactions where it doesn't.
 5. The widget shows the transaction link when it confirms. The same action also appears on `/leaderboard` under the builder.
 

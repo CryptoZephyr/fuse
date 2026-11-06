@@ -7,6 +7,7 @@ import {
   formatUnits,
   http,
   isAddress,
+  parseEventLogs,
   parseUnits,
 } from "viem";
 import { useConfig, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
@@ -29,6 +30,7 @@ import {
   MEZO_TESTNET_CHAIN_ID,
   MEZO_TESTNET_RPC_URL,
   MEZO_TOKENS,
+  fuseRouterAbi,
   type MezoTokenSymbol,
   type SaveQuote,
   type SwapQuote,
@@ -36,6 +38,8 @@ import {
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
 } from "mezo-fuse";
+
+const QUOTE_MAX_AGE_MS = 60_000;
 
 export interface UseFuseWidgetOptions {
   builderAddress?: string | null;
@@ -157,6 +161,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
   const [lockQuote, setLockQuote] = useState<LockQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState<boolean>(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<number | null>(null);
 
   // Execution / approval states
   const [approvalPending, setApprovalPending] = useState<boolean>(false);
@@ -265,6 +270,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
 
     async function fetchActiveQuote() {
       setQuoteError(null);
+      setQuoteUpdatedAt(null);
       if (!isValidBuilderAddress || parsedAmountWei <= 0n) {
         setSwapQuote(null);
         setSaveQuote(null);
@@ -288,20 +294,29 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
             amountIn: parsedAmountWei,
             slippageBps,
           });
-          if (!cancelled) setSwapQuote(q);
+          if (!cancelled) {
+            setSwapQuote(q);
+            setQuoteUpdatedAt(Date.now());
+          }
         } else if (activeTab === "save") {
           const q = await fuseClient.getSaveQuote({
             builder: builderAddress,
             amountIn: parsedAmountWei,
           });
-          if (!cancelled) setSaveQuote(q);
+          if (!cancelled) {
+            setSaveQuote(q);
+            setQuoteUpdatedAt(Date.now());
+          }
         } else if (activeTab === "lock") {
           const q = await fuseClient.getLockQuote({
             builder: builderAddress,
             amountIn: parsedAmountWei,
             lockDurationSeconds,
           });
-          if (!cancelled) setLockQuote(q);
+          if (!cancelled) {
+            setLockQuote(q);
+            setQuoteUpdatedAt(Date.now());
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -310,6 +325,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
           setSwapQuote(null);
           setSaveQuote(null);
           setLockQuote(null);
+          setQuoteUpdatedAt(null);
         }
       } finally {
         if (!cancelled) setQuoteLoading(false);
@@ -412,10 +428,30 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     setExecutionStep("checking_allowance");
 
     try {
+      if (!quoteUpdatedAt || Date.now() - quoteUpdatedAt > QUOTE_MAX_AGE_MS) {
+        throw new Error("Your quote expired. Wait for a fresh quote before submitting.");
+      }
+
+      const latestStatus = await fuseClient.getBuilderStatus(builderAddress, accountAddress);
+      if (latestStatus.routerPaused) throw new Error("RouterPaused");
+      if (!latestStatus.registered) throw new Error("BuilderNotRegistered");
+      if (!latestStatus.active) throw new Error("BuilderNotActive");
+      if (latestStatus.needsApproval) throw new Error("BuilderNotApprovedByUser");
+      if (latestStatus.needsHigherApproval) throw new Error("FeeAboveUserApproval");
+
       let result: ActionExecutionResult;
       if (activeTab === "swap") {
-        if (!swapQuote) {
-          throw new Error("Wait for swap quote to load before submitting.");
+        const tokenIn = MEZO_TOKENS[swapTokenInSymbol].address;
+        const tokenOut = MEZO_TOKENS[swapTokenOutSymbol].address;
+        if (
+          !swapQuote ||
+          swapQuote.amountIn !== parsedAmountWei ||
+          swapQuote.feeBps !== latestStatus.feeBps ||
+          swapQuote.tokenIn.toLowerCase() !== tokenIn.toLowerCase() ||
+          swapQuote.tokenOut.toLowerCase() !== tokenOut.toLowerCase() ||
+          swapQuote.slippageBps !== slippageBps
+        ) {
+          throw new Error("Your swap quote is out of date. Wait for a fresh quote before submitting.");
         }
         result = await fuseClient.executeSwap({
           builder: builderAddress,
@@ -425,12 +461,27 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
           onStep: (step) => setExecutionStep(step),
         });
       } else if (activeTab === "save") {
+        if (
+          !saveQuote ||
+          saveQuote.amountIn !== parsedAmountWei ||
+          saveQuote.feeBps !== latestStatus.feeBps
+        ) {
+          throw new Error("Your save quote is out of date. Wait for a fresh quote before submitting.");
+        }
         result = await fuseClient.executeSave({
           builder: builderAddress,
           amount: parsedAmountWei,
           onStep: (step) => setExecutionStep(step),
         });
       } else {
+        if (
+          !lockQuote ||
+          lockQuote.amountIn !== parsedAmountWei ||
+          lockQuote.feeBps !== latestStatus.feeBps ||
+          lockQuote.lockDurationSeconds !== lockDurationSeconds
+        ) {
+          throw new Error("Your lock quote is out of date. Wait for a fresh quote before submitting.");
+        }
         result = await fuseClient.executeLock({
           builder: builderAddress,
           amount: parsedAmountWei,
@@ -438,6 +489,30 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
           onStep: (step) => setExecutionStep(step),
         });
       }
+
+      setExecutionStep("action_tx_confirming");
+      const routedLogs = parseEventLogs({
+        abi: fuseRouterAbi,
+        eventName: "Routed",
+        logs: result.receipt.logs,
+        strict: false,
+      });
+      const receiptRouter = result.receipt.to?.toLowerCase();
+      const hasMatchingRoutedEvent = routedLogs.some((log) => {
+        const args = log.args;
+        return Boolean(
+          receiptRouter &&
+            log.address.toLowerCase() === receiptRouter &&
+            args.builder?.toLowerCase() === builderAddress.toLowerCase() &&
+            args.user?.toLowerCase() === accountAddress?.toLowerCase(),
+        );
+      });
+      if (!hasMatchingRoutedEvent) {
+        throw new Error(
+          "The successful receipt did not contain a matching Fuse Routed event. Open the receipt page to verify the transaction.",
+        );
+      }
+
       setLastResult(result);
       await refreshOnChainState();
     } catch (err) {
@@ -448,12 +523,19 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     }
   }, [
     activeTab,
+    accountAddress,
     builderAddress,
     fuseClient,
+    lockQuote,
     lockDurationSeconds,
     parsedAmountWei,
+    quoteUpdatedAt,
     refreshOnChainState,
+    saveQuote,
+    slippageBps,
     swapQuote,
+    swapTokenInSymbol,
+    swapTokenOutSymbol,
   ]);
 
   const handleFlipSwapPair = useCallback(() => {
@@ -514,6 +596,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     lockQuote,
     quoteLoading,
     quoteError,
+    quoteUpdatedAt,
 
     // Approvals & Execution
     approvalPending,

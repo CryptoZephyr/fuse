@@ -1,5 +1,5 @@
 import { type Address, type PublicClient, formatUnits } from "viem";
-import { fuseRouterAbi, tigrisRouterAbi } from "./abis.js";
+import { fuseRouterAbi, musdSavingsVaultAbi, tigrisRouterAbi } from "./abis.js";
 import {
   BPS_DENOMINATOR,
   type FuseAddresses,
@@ -45,8 +45,50 @@ export interface SaveQuote extends FeeBreakdown {
   tokenIn: Address;
   tokenOut: Address;
   sharesOut: bigint;
+  sharesOutIsEstimated: boolean;
   sharesOutUsd: number | null;
   btcUsdPrice: BtcUsdOraclePrice | null;
+}
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+function assertPositiveAmount(amountIn: bigint): void {
+  if (amountIn <= 0n) throw new Error("ZeroAmount");
+}
+
+function assertBuilderCanRoute(
+  builderTuple: readonly [number, boolean, boolean, string],
+  routerPaused: boolean,
+): void {
+  if (routerPaused) throw new Error("RouterPaused");
+  const [, active, registered] = builderTuple;
+  if (!registered) throw new Error("BuilderNotRegistered");
+  if (!active) throw new Error("BuilderNotActive");
+}
+
+function validateSwapRoutes(
+  routes: readonly TigrisRoute[],
+  tokenIn: Address,
+  poolFactory: Address,
+): void {
+  if (routes.length === 0) throw new Error("EmptyRoutes");
+  if (routes[0].from.toLowerCase() !== tokenIn.toLowerCase()) {
+    throw new Error("InvalidRouteStart");
+  }
+
+  for (let index = 0; index < routes.length; index += 1) {
+    const route = routes[index];
+    const expectedFrom = index === 0 ? tokenIn : routes[index - 1].to;
+    if (route.from.toLowerCase() !== expectedFrom.toLowerCase()) {
+      throw new Error("InvalidRouteContinuity");
+    }
+    if (
+      route.factory.toLowerCase() !== ZERO_ADDRESS &&
+      route.factory.toLowerCase() !== poolFactory.toLowerCase()
+    ) {
+      throw new Error("InvalidRouteFactory");
+    }
+  }
 }
 
 export interface LockQuote extends FeeBreakdown {
@@ -159,26 +201,45 @@ export async function getSwapQuote({
   routes,
   addresses = MEZO_TESTNET_ADDRESSES,
 }: GetSwapQuoteParameters): Promise<SwapQuote> {
+  assertPositiveAmount(amountIn);
+  if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
+    throw new Error("SameToken");
+  }
+  if (!Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps > 10_000) {
+    throw new Error("InvalidSlippage");
+  }
+
   const resolvedRoutes =
     routes && routes.length > 0
       ? routes
       : buildDefaultTigrisRoute(tokenIn, tokenOut, addresses.poolFactory);
+  validateSwapRoutes(resolvedRoutes, tokenIn, addresses.poolFactory);
 
-  const [builderTuple, btcUsdPrice] = await Promise.all([
+  const [builderTuple, routerPaused, tokenAllowed, btcUsdPrice] = await Promise.all([
     publicClient.readContract({
       address: addresses.fuseRouter,
       abi: fuseRouterAbi,
       functionName: "builders",
       args: [builder],
     }),
+    publicClient.readContract({
+      address: addresses.fuseRouter,
+      abi: fuseRouterAbi,
+      functionName: "paused",
+    }),
+    publicClient.readContract({
+      address: addresses.fuseRouter,
+      abi: fuseRouterAbi,
+      functionName: "allowedInput",
+      args: [tokenIn],
+    }),
     getBtcUsdPrice(publicClient, addresses.skipBtcUsdOracle),
   ]);
 
-  const [rawFeeBps, , registered] = builderTuple;
-  if (!registered) {
-    throw new Error("BuilderNotRegistered");
-  }
+  assertBuilderCanRoute(builderTuple, routerPaused);
+  if (!tokenAllowed) throw new Error("TokenNotAllowed");
 
+  const [rawFeeBps] = builderTuple;
   const feeBps = Number(rawFeeBps);
   const { feeAmount, netAmount } = calculateBuilderFee(amountIn, feeBps);
 
@@ -230,26 +291,38 @@ export async function getSaveQuote({
   amountIn,
   addresses = MEZO_TESTNET_ADDRESSES,
 }: GetSaveQuoteParameters): Promise<SaveQuote> {
-  const [builderTuple, btcUsdPrice] = await Promise.all([
+  assertPositiveAmount(amountIn);
+
+  const [builderTuple, routerPaused, btcUsdPrice] = await Promise.all([
     publicClient.readContract({
       address: addresses.fuseRouter,
       abi: fuseRouterAbi,
       functionName: "builders",
       args: [builder],
     }),
+    publicClient.readContract({
+      address: addresses.fuseRouter,
+      abi: fuseRouterAbi,
+      functionName: "paused",
+    }),
     getBtcUsdPrice(publicClient, addresses.skipBtcUsdOracle),
   ]);
 
-  const [rawFeeBps, , registered] = builderTuple;
-  if (!registered) {
-    throw new Error("BuilderNotRegistered");
-  }
+  assertBuilderCanRoute(builderTuple, routerPaused);
 
+  const [rawFeeBps] = builderTuple;
   const feeBps = Number(rawFeeBps);
   const { feeAmount, netAmount } = calculateBuilderFee(amountIn, feeBps);
 
-  // MUSDSavingsRate on Mezo Testnet mints sMUSD 1:1 on `deposit(netAmount)`
-  const sharesOut = netAmount;
+  const previewedShares = await publicClient
+    .readContract({
+      address: addresses.savingsVault,
+      abi: musdSavingsVaultAbi,
+      functionName: "previewDeposit",
+      args: [netAmount],
+    })
+    .catch(() => null);
+  const sharesOut = previewedShares ?? netAmount;
 
   return {
     tokenIn: addresses.musd,
@@ -260,6 +333,7 @@ export async function getSaveQuote({
     feeAmount,
     netAmount,
     sharesOut,
+    sharesOutIsEstimated: previewedShares === null,
     amountInUsd: estimateTokenUsdValue(addresses.musd, amountIn, btcUsdPrice, addresses),
     feeUsd: estimateTokenUsdValue(addresses.musd, feeAmount, btcUsdPrice, addresses),
     netAmountUsd: estimateTokenUsdValue(addresses.musd, netAmount, btcUsdPrice, addresses),
@@ -283,13 +357,20 @@ export async function getLockQuote({
   lockDurationSeconds,
   addresses = MEZO_TESTNET_ADDRESSES,
 }: GetLockQuoteParameters): Promise<LockQuote> {
-  const [builderTuple, maxLockDurationOnChain, previewedUnlockOnChain, btcUsdPrice] =
+  assertPositiveAmount(amountIn);
+
+  const [builderTuple, routerPaused, maxLockDurationOnChain, previewedUnlockOnChain, btcUsdPrice] =
     await Promise.all([
       publicClient.readContract({
         address: addresses.fuseRouter,
         abi: fuseRouterAbi,
         functionName: "builders",
         args: [builder],
+      }),
+      publicClient.readContract({
+        address: addresses.fuseRouter,
+        abi: fuseRouterAbi,
+        functionName: "paused",
       }),
       publicClient
         .readContract({
@@ -319,11 +400,9 @@ export async function getLockQuote({
     );
   }
 
-  const [rawFeeBps, , registered] = builderTuple;
-  if (!registered) {
-    throw new Error("BuilderNotRegistered");
-  }
+  assertBuilderCanRoute(builderTuple, routerPaused);
 
+  const [rawFeeBps] = builderTuple;
   const feeBps = Number(rawFeeBps);
   const { feeAmount, netAmount } = calculateBuilderFee(amountIn, feeBps);
 
