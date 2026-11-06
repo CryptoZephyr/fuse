@@ -1,6 +1,6 @@
 {
   "name": "mezo-fuse",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript SDK for FuseRouter on Mezo testnet: swaps, saves, locks, builder fee approvals and Routed event reads",
   "license": "MIT",
   "type": "module",
