@@ -457,7 +457,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                       >
                         Manage all caps
                       </Link>
-                      {builderStatus.feeBps > 0 && (
+                      {builderStatus.userApproved && (
                         <button
                           type="button"
                           disabled={revokePending || isWrongNetwork}

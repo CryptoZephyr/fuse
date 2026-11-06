@@ -292,7 +292,6 @@ export function BuilderRatingPlate({
   userMaxFeePercentFormatted = "0.00%",
   showProfileLink = true,
 }: BuilderRatingPlateProps) {
-  const isZeroFee = feeBps === 0 || !registered || !active;
   const isTripped =
     isConnected &&
     registered &&
@@ -325,8 +324,16 @@ export function BuilderRatingPlate({
   }
 
   let capDisplay = "Connect wallet to view";
-  if (isZeroFee) {
-    capDisplay = "No cap needed (0%)";
+  if (!registered || !active) {
+    capDisplay = "Cap unavailable while partner is inactive";
+  } else if (feeBps === 0) {
+    if (!isConnected) {
+      capDisplay = "Connect wallet to approve 0% fee";
+    } else if (!userApproved) {
+      capDisplay = "Approval required at 0 bps";
+    } else {
+      capDisplay = "Approved at 0 bps";
+    }
   } else if (isConnected) {
     if (!userApproved) {
       capDisplay = "Not approved yet";

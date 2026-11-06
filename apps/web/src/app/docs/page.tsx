@@ -70,13 +70,11 @@ const quote = await fuse.getSaveQuote({
   amountIn: parseUnits("10", 18),
 });
 
-// 2. Approve builder fee once (only needed when builder feeBps > 0)
-if (quote.feeBps > 0) {
-  await fuse.approveBuilder({
-    builder: DEFAULT_PAID_BUILDER_TESTNET,
-    maxFeeBps: quote.feeBps,
-  });
-}
+// 2. Approve the builder fee cap once, including when feeBps is 0
+await fuse.approveBuilder({
+  builder: DEFAULT_PAID_BUILDER_TESTNET,
+  maxFeeBps: quote.feeBps,
+});
 
 // 3. Execute Save (uses 1-tx EIP-2612 MUSD permit on EVM wallets, or automatic 2-step approve+save on Bitcoin Smart Accounts)
 const tx = await fuse.executeSave({
