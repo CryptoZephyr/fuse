@@ -174,10 +174,10 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     (activeTab !== "swap" || Boolean(swapQuote));
 
   const feeBps = builderStatus?.feeBps ?? 0;
-  const isCapApprovedOrZero = Boolean(
+  const isCapApproved = Boolean(
     builderStatus &&
-      (builderStatus.feeBps === 0 ||
-        (!builderStatus.needsApproval && !builderStatus.needsHigherApproval)),
+      !builderStatus.needsApproval &&
+      !builderStatus.needsHigherApproval,
   );
 
   // Determine FuseStrip mode
@@ -189,12 +189,12 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
       fuseStripMode = "builder-unregistered";
     } else if (!builderStatus.active) {
       fuseStripMode = "builder-inactive";
-    } else if (builderStatus.feeBps === 0) {
-      fuseStripMode = "zero-fee";
     } else if (builderStatus.needsHigherApproval) {
       fuseStripMode = "tripped";
     } else if (builderStatus.needsApproval) {
       fuseStripMode = "needs-approval";
+    } else if (builderStatus.feeBps === 0) {
+      fuseStripMode = "zero-fee";
     } else {
       fuseStripMode = "within-cap";
     }
@@ -245,7 +245,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
         isConnected={isConnected}
         isWrongNetwork={isWrongNetwork}
         feeBps={feeBps}
-        isCapApprovedOrZero={isCapApprovedOrZero}
+        isCapApprovedOrZero={isCapApproved}
         actionLabel={actionStepLabel}
         hasConfirmedReceipt={Boolean(lastResult)}
       />
@@ -436,7 +436,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   >
                     <span style={{ color: "#4E535A" }}>
                       {builderStatus.feeBps === 0 ? (
-                        <>No fee. No approval needed.</>
+                        <>No partner fee. Your approval is active.</>
                       ) : (
                         <>
                           Your cap:{" "}
