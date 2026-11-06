@@ -1,20 +1,29 @@
 "use client";
 
-import React from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import React, { useState } from "react";
+import Link from "next/link";
 import { formatUnits } from "viem";
 import {
   type ExecutionStep,
   type FuseActionType,
   LOCK_DURATION_PRESETS,
   MEZO_TESTNET_ADDRESSES,
-  MEZO_TOKENS,
   type MezoTokenSymbol,
   formatUsd,
-  getExplorerAddressUrl,
   shortenAddress,
 } from "mezo-fuse";
 import { useFuseWidget } from "../hooks/useFuseWidget";
+import { FuseLogoMark } from "./FuseLogo";
+import {
+  BuilderRatingPlate,
+  FuseIntactSchematicSvg,
+  FuseOpenSwitchSchematicSvg,
+  FuseStrip,
+  type FuseStripMode,
+  FuseWalletControl,
+  WidgetStepStrip,
+  WiringSplitDiagram,
+} from "./SwitchgearPrimitives";
 
 export interface FuseWidgetProps {
   /** Builder address (`0x...`) credited for routed actions */
@@ -34,42 +43,62 @@ function formatTokenAmount(wei: bigint, decimals = 18, maxFrac = 6): string {
   });
 }
 
+function computeExchangeRate(
+  amountInWei: bigint,
+  amountOutWei: bigint,
+): string | null {
+  const inNum = Number(formatUnits(amountInWei, 18));
+  const outNum = Number(formatUnits(amountOutWei, 18));
+  if (!Number.isFinite(inNum) || !Number.isFinite(outNum) || inNum <= 0) {
+    return null;
+  }
+  const rate = outNum / inNum;
+  if (!Number.isFinite(rate) || rate <= 0) return null;
+  return rate.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: rate >= 100 ? 2 : 6,
+  });
+}
+
 function describeExecutionStep(step: ExecutionStep | null): string {
   switch (step) {
     case "checking_allowance":
-      return "Checking token allowance...";
+      return "Step 1: Checking token allowance...";
     case "permit_signature_pending":
-      return "Permit signature pending in wallet (EIP-2612 MUSD permit)...";
+      return "Step 2: Sign one signature in wallet to allow MUSD...";
     case "permit_fallback_to_approve":
-      return "Bitcoin smart account detected — falling back to standard ERC-20 approve + action...";
+      return "Step 2: Bitcoin wallet detected · Switching to 2-step allow + route...";
     case "token_approval_pending":
-      return "Token approval pending signature in wallet...";
+      return "Step 2: Confirm token allowance in wallet...";
     case "token_approval_confirming":
-      return "Waiting for token approval confirmation on Mezo testnet...";
+      return "Step 2: Waiting for token allowance on Mezo Testnet...";
     case "action_tx_pending":
-      return "Action transaction pending signature in wallet...";
+      return "Step 3: Confirm routed action in wallet...";
     case "action_tx_confirming":
-      return "Waiting for transaction confirmation on Mezo testnet...";
+      return "Step 3: Confirming routed transaction on Mezo Testnet...";
     case "confirmed":
-      return "Confirmed on Mezo testnet.";
+      return "Confirmed on Mezo Testnet.";
     default:
-      return "Submitting...";
+      return "Submitting transaction...";
   }
 }
 
 /**
- * `<FuseWidget />` — Embeddable Mezo Builder Router Widget.
+ * `<FuseWidget />` - Embeddable Switchgear Panel Action Ticket for Mezo.
  *
- * NOTE ON VISUAL DESIGN (see `FRONTEND.md`, `DESIGN_SYSTEM.md`, `AGENTS.md`):
- * Visual design belongs exclusively to the project owner. This component intentionally
- * renders plain, unstyled semantic HTML with `data-fuse-*` hooks and accessible attributes
- * so it functions at any iframe width while leaving all visual styling decisions to the owner.
+ * Implements the locked Switchgear Panel design system (`DESIGN_SYSTEM.md`):
+ * - Builder Rating Plate with `Big Shoulders Stencil` title & outlined `Self-reported` tag
+ * - Intact / Tripped Fuse Strip showing user fee cap protection before any wallet prompt
+ * - Single-line electrical wiring split schematic & dotted leader-line receipt
+ * - Plain user-facing copy and 320px–440px responsive ticket frame
  */
 export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps) {
   const state = useFuseWidget({
     builderAddress: builder,
     defaultAction,
   });
+
+  const [keptCapNotice, setKeptCapNotice] = useState<boolean>(false);
 
   const {
     accountAddress,
@@ -144,217 +173,313 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     (activeTab !== "lock" || lockWarningAcknowledged) &&
     (activeTab !== "swap" || Boolean(swapQuote));
 
+  const feeBps = builderStatus?.feeBps ?? 0;
+  const isCapApprovedOrZero = Boolean(
+    builderStatus &&
+      (builderStatus.feeBps === 0 ||
+        (!builderStatus.needsApproval && !builderStatus.needsHigherApproval)),
+  );
+
+  // Determine FuseStrip mode
+  let fuseStripMode: FuseStripMode = "within-cap";
+  if (builderStatus) {
+    if (builderStatus.routerPaused) {
+      fuseStripMode = "router-paused";
+    } else if (!builderStatus.registered) {
+      fuseStripMode = "builder-unregistered";
+    } else if (!builderStatus.active) {
+      fuseStripMode = "builder-inactive";
+    } else if (builderStatus.feeBps === 0) {
+      fuseStripMode = "zero-fee";
+    } else if (builderStatus.needsHigherApproval) {
+      fuseStripMode = "tripped";
+    } else if (builderStatus.needsApproval) {
+      fuseStripMode = "needs-approval";
+    } else {
+      fuseStripMode = "within-cap";
+    }
+  }
+
+  const isCapActionBlocking = Boolean(
+    isConnected &&
+      builderStatus?.registered &&
+      builderStatus?.active &&
+      (builderStatus.needsApproval || builderStatus.needsHigherApproval),
+  );
+
+  const actionStepLabel =
+    activeTab === "swap" ? "Swap" : activeTab === "save" ? "Save" : "Lock";
+
+  const swapExchangeRate = swapQuote
+    ? computeExchangeRate(swapQuote.netAmount, swapQuote.expectedOut)
+    : null;
+
   return (
     <section
       aria-label="Fuse Mezo Builder Action Widget"
       data-fuse-surface="widget"
-      style={{
-        boxSizing: "border-box",
-        width: "100%",
-        maxWidth: "100%",
-        overflowWrap: "break-word",
-      }}
+      className="fuse-widget-ticket"
     >
-      {/* 1. Header: Network Badge + Live Skip Oracle Status */}
-      <header data-fuse-section="header">
-        <div>
-          <strong data-fuse-badge="network">Mezo testnet (Chain ID 31611)</strong>
-          {" · "}
-          <span>Testnet tokens only (not real money)</span>
+      {/* 1. Compact Top Status Strip */}
+      <header data-fuse-section="header" className="fuse-widget-ticket__topstrip">
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <FuseLogoMark size={16} />
+          <strong data-fuse-badge="network">Mezo Testnet</strong>
         </div>
+
         <div data-fuse-section="oracle">
           {btcUsdPrice ? (
             <span>
-              Skip BTC/USD Oracle: <strong>{btcUsdPrice.formattedUsd}</strong>
+              BTC price: <strong className="fuse-num">{btcUsdPrice.formattedUsd}</strong>
             </span>
           ) : (
             <span data-fuse-state="oracle-unavailable">
-              BTC/USD price feed unavailable (dollar values hidden; actions remain enabled)
+              BTC price unavailable · token amounts shown
             </span>
           )}
         </div>
       </header>
 
-      <hr />
+      {/* 2. 4-Step Progress Strip */}
+      <WidgetStepStrip
+        isConnected={isConnected}
+        isWrongNetwork={isWrongNetwork}
+        feeBps={feeBps}
+        isCapApprovedOrZero={isCapApprovedOrZero}
+        actionLabel={actionStepLabel}
+        hasConfirmedReceipt={Boolean(lastResult)}
+      />
 
-      {/* 2. Wallet Connection (Mezo Passport only) */}
-      <section aria-label="Wallet Connection" data-fuse-section="wallet">
-        <div data-fuse-component="passport-connect">
-          <ConnectButton showBalance={false} />
-        </div>
-
-        {!isConnected && (
-          <p data-fuse-state="not-connected">
-            Status: <strong>Not connected</strong>. Connect a Bitcoin wallet (Xverse, Unisat, OKX) or EVM wallet via Mezo Passport.
-          </p>
-        )}
-
-        {isConnected && (
-          <div data-fuse-state="connected">
-            <p>
-              Connected ({networkFamily === "bitcoin" ? "Bitcoin Smart Account via OrangeKit Safe" : "EVM Wallet"}):{" "}
-              <code>{walletAddress}</code>
-              {walletAddress &&
-                accountAddress &&
-                walletAddress.toLowerCase() !== accountAddress.toLowerCase() && (
-                  <>
-                    {" "}
-                    (Mezo EVM Safe: <code>{shortenAddress(accountAddress, 6)}</code>)
-                  </>
-                )}
-            </p>
-          </div>
-        )}
-
-        {/* Taproot Address Guard (T0 Spike Architectural Decision #2) */}
-        {isTaproot && (
-          <div role="alert" data-fuse-state="taproot-unsupported">
-            <strong>Unsupported Bitcoin Address Type (Taproot P2TR):</strong> Mezo Passport OrangeKit only supports Native SegWit (<code>tb1q...</code> / <code>bc1q...</code>), Nested SegWit, or Legacy addresses. Please switch your Xverse / Unisat / OKX account from Taproot (<code>tb1p...</code>) to Native SegWit (<code>tb1q...</code>).
-          </div>
-        )}
-
-        {/* Wrong Network Guard */}
-        {isWrongNetwork && (
-          <div role="alert" data-fuse-state="wrong-network">
-            <p>
-              <strong>Wrong network:</strong> Please switch your wallet to Mezo Testnet (Chain ID 31611).
-            </p>
-            <button type="button" onClick={handleSwitchToMezoTestnet}>
-              Switch to Mezo Testnet (31611)
-            </button>
-          </div>
-        )}
-      </section>
-
-      <hr />
-
-      {/* 3. Builder Attribution & Per-User Fee Approval Guard */}
-      <section aria-label="Builder Attribution and Fee Approval" data-fuse-section="builder">
+      {/* 3. Builder Rating Plate & Fuse Strip (Per-User Cap Guard) */}
+      <section
+        aria-label="Builder Attribution and Fee Approval"
+        data-fuse-section="builder"
+        className="fuse-widget-ticket__section"
+      >
         {!isValidBuilderAddress && (
-          <div role="alert" data-fuse-state="invalid-builder">
-            Invalid builder address parameter. Defaulting to testnet builder{" "}
-            <code>{builderAddress}</code>.
+          <div
+            role="alert"
+            data-fuse-state="invalid-builder"
+            className="fuse-alert fuse-alert--attention"
+            style={{ marginBottom: "8px" }}
+          >
+            The partner address in this link is invalid. Showing the default partner{" "}
+            <code>{shortenAddress(builderAddress, 6)}</code>.
           </div>
         )}
 
         {builderLoading ? (
-          <p data-fuse-state="builder-loading">Loading builder registration from FuseRouter...</p>
+          <div data-fuse-state="builder-loading" style={{ padding: "8px 0" }}>
+            <div className="fuse-skeleton" style={{ height: "64px", width: "100%" }} />
+            <p className="fuse-mono" style={{ fontSize: "11px", color: "#4E535A", marginTop: "6px" }}>
+              Loading partner details...
+            </p>
+          </div>
         ) : !builderStatus ? (
-          <div role="alert" data-fuse-state="builder-error">
-            Unable to read builder status from FuseRouter.
+          <div
+            role="alert"
+            data-fuse-state="builder-error"
+            className="fuse-alert fuse-alert--tripped"
+          >
+            Could not load partner details. Refresh to try again.
           </div>
         ) : (
-          <div>
-            <p>
-              Builder:{" "}
-              <strong data-fuse-field="builder-name">
-                {builderStatus.metadata.name}
-              </strong>{" "}
-              <small data-fuse-label="self-reported">(self-reported name)</small>{" "}
-              <a
-                href={getExplorerAddressUrl(builderStatus.address)}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <code>{shortenAddress(builderStatus.address, 6)}</code>
-              </a>
-            </p>
-            <p>
-              Builder Fee:{" "}
-              <strong data-fuse-field="builder-fee-percent">
-                {builderStatus.feePercentFormatted} ({builderStatus.feeBps} bps)
-              </strong>{" "}
-              {builderStatus.feeBps === 0 && (
-                <span>(Zero-fee attribution mode — 100% of input goes to action)</span>
-              )}
-            </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <BuilderRatingPlate
+              builderAddress={builderStatus.address}
+              builderName={builderStatus.metadata.name}
+              feeBps={builderStatus.feeBps}
+              feePercentFormatted={builderStatus.feePercentFormatted}
+              registered={builderStatus.registered}
+              active={builderStatus.active}
+              routerPaused={builderStatus.routerPaused}
+              isConnected={isConnected}
+              userApproved={builderStatus.userApproved}
+              userMaxFeeBps={builderStatus.userMaxFeeBps}
+              userMaxFeePercentFormatted={builderStatus.userMaxFeePercentFormatted}
+            />
+
+            {/* Schematic Fuse Strip */}
+            <FuseStrip
+              mode={fuseStripMode}
+              feeBps={builderStatus.feeBps}
+              feePercentFormatted={builderStatus.feePercentFormatted}
+              userMaxFeeBps={builderStatus.userMaxFeeBps}
+              userMaxFeePercentFormatted={builderStatus.userMaxFeePercentFormatted}
+              builderName={builderStatus.metadata.name}
+            />
 
             {!builderStatus.registered && (
-              <div role="alert" data-fuse-state="builder-not-registered">
-                <strong>Builder not registered:</strong> Address{" "}
-                <code>{builderStatus.address}</code> is not registered in FuseRouter.
+              <div
+                role="alert"
+                data-fuse-state="builder-not-registered"
+                className="fuse-alert fuse-alert--neutral"
+              >
+                <strong>Partner not registered:</strong> Address{" "}
+                <code>{shortenAddress(builderStatus.address, 6)}</code> is not registered, so no fee applies.
               </div>
             )}
 
             {builderStatus.registered && !builderStatus.active && (
-              <div role="alert" data-fuse-state="builder-inactive">
-                <strong>Builder inactive:</strong> This builder is currently deactivated and cannot route new actions.
+              <div
+                role="alert"
+                data-fuse-state="builder-inactive"
+                className="fuse-alert fuse-alert--neutral"
+              >
+                <strong>Partner paused:</strong> This partner is paused and cannot route new actions.
               </div>
             )}
 
             {builderStatus.routerPaused && (
-              <div role="alert" data-fuse-state="router-paused">
-                <strong>Router paused:</strong> FuseRouter is currently paused for new actions. You may still revoke your builder fee approval below at any time.
+              <div
+                role="alert"
+                data-fuse-state="router-paused"
+                className="fuse-alert fuse-alert--tripped"
+              >
+                <strong>Routing paused:</strong> New actions are paused. You can still revoke your partner cap at any time.
               </div>
             )}
 
             {isConnected && builderStatus.registered && (
               <div data-fuse-section="user-approval">
                 {builderStatus.needsApproval ? (
-                  <div role="alert" data-fuse-state="builder-not-approved">
-                    <p>
-                      <strong>Builder not approved:</strong> You must approve this builder&apos;s maximum fee (
-                      {builderStatus.feePercentFormatted}) before routing actions through FuseRouter.
+                  <div
+                    role="alert"
+                    data-fuse-state="builder-not-approved"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      marginTop: "2px",
+                    }}
+                  >
+                    <p style={{ fontSize: "12px", color: "#4E535A" }}>
+                      Approve <strong>{builderStatus.metadata.name}</strong> to take up to{" "}
+                      <strong>
+                        {builderStatus.feePercentFormatted} ({builderStatus.feeBps} bps)
+                      </strong>{" "}
+                      on routed actions. Change or revoke anytime.
                     </p>
                     <button
                       type="button"
                       disabled={approvalPending || isWrongNetwork}
                       onClick={handleApproveBuilder}
                       data-fuse-action="approve-builder"
+                      className="fuse-btn fuse-btn--primary fuse-btn--block fuse-btn--hard-shadow"
                     >
                       {approvalPending
                         ? "Approval pending in wallet..."
-                        : `Approve Builder up to ${builderStatus.feePercentFormatted} (${builderStatus.feeBps} bps)`}
+                        : `Approve up to ${builderStatus.feePercentFormatted} fee`}
                     </button>
                   </div>
                 ) : builderStatus.needsHigherApproval ? (
-                  <div role="alert" data-fuse-state="fee-above-user-approval">
-                    <p>
-                      <strong>Builder fee increased:</strong> Builder fee is now{" "}
-                      {builderStatus.feePercentFormatted} ({builderStatus.feeBps} bps), which is above your approved maximum of{" "}
-                      {builderStatus.userMaxFeePercentFormatted} ({builderStatus.userMaxFeeBps} bps). A fee increase never applies silently.
+                  <div
+                    role="alert"
+                    data-fuse-state="fee-above-user-approval"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      marginTop: "2px",
+                    }}
+                  >
+                    <p style={{ fontSize: "12px", color: "#A0174A", fontWeight: 700 }}>
+                      Blocked: {builderStatus.feeBps} bps is above your {builderStatus.userMaxFeeBps} bps cap. Nothing will be signed.
                     </p>
-                    <button
-                      type="button"
-                      disabled={approvalPending || isWrongNetwork}
-                      onClick={handleApproveBuilder}
-                      data-fuse-action="approve-higher-fee"
-                    >
-                      {approvalPending
-                        ? "Approval pending in wallet..."
-                        : `Approve Updated Fee (${builderStatus.feePercentFormatted})`}
-                    </button>{" "}
-                    <button
-                      type="button"
-                      disabled={revokePending || isWrongNetwork}
-                      onClick={handleRevokeBuilder}
-                      data-fuse-action="revoke-builder"
-                    >
-                      {revokePending ? "Revoking..." : "Revoke Builder Approval"}
-                    </button>
+                    {keptCapNotice && (
+                      <p style={{ fontSize: "12px", color: "#1D6340", fontWeight: 700 }}>
+                        Your {builderStatus.userMaxFeeBps} bps cap remains enforced. Routing through this builder stays blocked until they lower their fee or you raise your cap.
+                      </p>
+                    )}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setKeptCapNotice(true)}
+                        className="fuse-btn fuse-btn--primary fuse-btn--sm"
+                      >
+                        Keep my {builderStatus.userMaxFeeBps} bps cap
+                      </button>
+                      <button
+                        type="button"
+                        disabled={approvalPending || isWrongNetwork}
+                        onClick={handleApproveBuilder}
+                        data-fuse-action="approve-higher-fee"
+                        className="fuse-btn fuse-btn--secondary fuse-btn--sm"
+                      >
+                        {approvalPending
+                          ? "Approval pending in wallet..."
+                          : `Approve ${builderStatus.feeBps} bps instead`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={revokePending || isWrongNetwork}
+                        onClick={handleRevokeBuilder}
+                        data-fuse-action="revoke-builder"
+                        className="fuse-btn fuse-btn--quiet fuse-btn--sm"
+                      >
+                        {revokePending ? "Revoking..." : "Revoke partner"}
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <p data-fuse-state="builder-approved">
-                    Your Approval: Approved up to{" "}
-                    <strong>
-                      {builderStatus.userMaxFeePercentFormatted} ({builderStatus.userMaxFeeBps} bps)
-                    </strong>{" "}
-                    <button
-                      type="button"
-                      disabled={revokePending || isWrongNetwork}
-                      onClick={handleRevokeBuilder}
-                      data-fuse-action="revoke-builder"
-                    >
-                      {revokePending ? "Revoking..." : "Revoke Builder"}
-                    </button>
-                  </p>
+                  <div
+                    data-fuse-state="builder-approved"
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      fontSize: "12px",
+                      paddingTop: "2px",
+                    }}
+                  >
+                    <span style={{ color: "#4E535A" }}>
+                      {builderStatus.feeBps === 0 ? (
+                        <>No fee. No approval needed.</>
+                      ) : (
+                        <>
+                          Your cap:{" "}
+                          <strong className="fuse-mono fuse-num" style={{ color: "#141619" }}>
+                            {builderStatus.userMaxFeePercentFormatted} ({builderStatus.userMaxFeeBps} bps)
+                          </strong>
+                        </>
+                      )}
+                    </span>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <Link
+                        href="/me"
+                        className="fuse-mono"
+                        style={{ fontSize: "11px" }}
+                      >
+                        Manage all caps
+                      </Link>
+                      {builderStatus.feeBps > 0 && (
+                        <button
+                          type="button"
+                          disabled={revokePending || isWrongNetwork}
+                          onClick={handleRevokeBuilder}
+                          data-fuse-action="revoke-builder"
+                          className="fuse-btn fuse-btn--quiet fuse-btn--sm"
+                          style={{ minHeight: "26px", padding: "2px 8px" }}
+                        >
+                          {revokePending ? "Revoking..." : "Revoke partner"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
 
                 {lastApprovalTxUrl && (
-                  <p data-fuse-state="approval-tx-confirmed">
-                    Builder approval updated:{" "}
+                  <p
+                    data-fuse-state="approval-tx-confirmed"
+                    className="fuse-mono"
+                    style={{ fontSize: "11px", marginTop: "6px", color: "#1D6340" }}
+                  >
+                    Cap updated on-chain:{" "}
                     <a href={lastApprovalTxUrl} target="_blank" rel="noopener noreferrer">
-                      View transaction on Mezo Testnet Explorer
+                      View transaction ↗
                     </a>
                   </p>
                 )}
@@ -364,10 +489,113 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
         )}
       </section>
 
-      <hr />
+      {/* 4. Wallet Connection Strip */}
+      <section
+        aria-label="Wallet Connection"
+        data-fuse-section="wallet"
+        className="fuse-widget-ticket__section"
+        style={{ background: "#F6F4EE" }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
+          }}
+        >
+          <div data-fuse-component="passport-connect">
+            <FuseWalletControl compact />
+          </div>
 
-      {/* 4. Action Tabs: Swap | Save | Lock */}
-      <nav aria-label="Mezo Actions" role="tablist" data-fuse-section="tabs">
+          {!isConnected && (
+            <p
+              data-fuse-state="not-connected"
+              style={{ fontSize: "12px", color: "#4E535A" }}
+            >
+              Connect a Bitcoin or EVM wallet to continue.
+            </p>
+          )}
+
+          {isConnected && (
+            <div
+              data-fuse-state="connected"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "12px",
+              }}
+            >
+              <span className="fuse-status-chip fuse-status-chip--env">
+                {networkFamily === "bitcoin" ? "Bitcoin wallet" : "EVM wallet"}
+              </span>
+              <code className="fuse-mono" style={{ fontSize: "12px" }}>
+                {shortenAddress(walletAddress ?? accountAddress ?? "", 5)}
+              </code>
+              {walletAddress &&
+                accountAddress &&
+                walletAddress.toLowerCase() !== accountAddress.toLowerCase() && (
+                  <span className="fuse-mono" style={{ fontSize: "11px", color: "#4E535A" }}>
+                    (Account: <code>{shortenAddress(accountAddress, 4)}</code>)
+                  </span>
+                )}
+            </div>
+          )}
+        </div>
+
+        {/* Taproot Address Guard */}
+        {isTaproot && (
+          <div
+            role="alert"
+            data-fuse-state="taproot-unsupported"
+            className="fuse-alert fuse-alert--attention"
+            style={{ marginTop: "8px" }}
+          >
+            <div className="fuse-alert__title">
+              <span>Taproot addresses are not supported</span>
+            </div>
+            <p style={{ fontSize: "12px" }}>
+              Bitcoin wallets on Mezo support Native SegWit (<code>tb1q...</code> / <code>bc1q...</code>), Nested SegWit, or Legacy addresses. Switch your Xverse, Unisat, or OKX account from Taproot (<code>tb1p...</code>) to Native SegWit (<code>tb1q...</code>).
+            </p>
+          </div>
+        )}
+
+        {/* Wrong Network Guard */}
+        {isWrongNetwork && (
+          <div
+            role="alert"
+            data-fuse-state="wrong-network"
+            className="fuse-alert fuse-alert--attention"
+            style={{ marginTop: "8px" }}
+          >
+            <div className="fuse-alert__title">
+              <FuseOpenSwitchSchematicSvg color="#7C4D07" />
+              <span>Wrong network</span>
+            </div>
+            <p style={{ fontSize: "12px", marginBottom: "8px" }}>
+              Your wallet is on a different network. Switch to Mezo Testnet to continue.
+            </p>
+            <button
+              type="button"
+              onClick={handleSwitchToMezoTestnet}
+              className="fuse-btn fuse-btn--primary fuse-btn--sm"
+            >
+              Switch to Mezo Testnet
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* 5. Action Tabs: Swap | Save | Lock */}
+      <nav
+        aria-label="Mezo Actions"
+        role="tablist"
+        data-fuse-section="tabs"
+        className="fuse-tabs"
+      >
         {(["swap", "save", "lock"] as const).map((tab) => (
           <button
             key={tab}
@@ -375,403 +603,809 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
             role="tab"
             aria-selected={activeTab === tab}
             data-fuse-tab={tab}
+            className="fuse-tab"
             onClick={() => {
               setActiveTab(tab);
               setErrorMessage(null);
             }}
           >
             {tab === "swap"
-              ? "Swap (Tigris DEX)"
+              ? "Swap"
               : tab === "save"
-                ? "Save (MUSD → sMUSD)"
-                : "Lock (BTC → veBTC)"}
-            {activeTab === tab ? " [Active]" : ""}
+                ? "Save"
+                : "Lock"}
           </button>
         ))}
       </nav>
 
-      <hr />
-
-      {/* 5A. SWAP TAB */}
+      {/* 6A. SWAP TAB */}
       {activeTab === "swap" && (
-        <fieldset data-fuse-panel="swap">
-          <legend>Swap via Tigris Router</legend>
+        <fieldset data-fuse-panel="swap" className="fuse-widget-ticket__section">
+          <legend className="fuse-eyebrow" style={{ marginBottom: "8px" }}>
+            Swap
+          </legend>
 
-          <div>
-            <label htmlFor="fuse-swap-token-in">From Token: </label>
-            <select
-              id="fuse-swap-token-in"
-              value={swapTokenInSymbol}
-              onChange={(e) => {
-                const nextIn = e.target.value as MezoTokenSymbol;
-                setSwapTokenInSymbol(nextIn);
-                if (nextIn === swapTokenOutSymbol) {
-                  setSwapTokenOutSymbol(nextIn === "MUSD" ? "BTC" : "MUSD");
-                }
-              }}
-            >
-              <option value="BTC">BTC (Mezo Precompile)</option>
-              <option value="MUSD">MUSD (Mezo USD)</option>
-              <option value="MEZO">MEZO</option>
-            </select>{" "}
-            <button type="button" onClick={handleFlipSwapPair}>
-              Flip Pair (⇄)
-            </button>{" "}
-            <label htmlFor="fuse-swap-token-out">To Token: </label>
-            <select
-              id="fuse-swap-token-out"
-              value={swapTokenOutSymbol}
-              onChange={(e) => setSwapTokenOutSymbol(e.target.value as MezoTokenSymbol)}
-            >
-              <option value="MUSD">MUSD (Mezo USD)</option>
-              <option value="BTC">BTC (Mezo Precompile)</option>
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="fuse-swap-amount">
-              Amount In ({swapTokenInSymbol}):{" "}
-            </label>
-            <input
-              id="fuse-swap-amount"
-              type="text"
-              inputMode="decimal"
-              value={swapAmountInput}
-              onChange={(e) => setSwapAmountInput(e.target.value)}
-              placeholder="0.0"
-            />
-            {isConnected && (
-              <span>
-                {" "}
-                Balance: {activeInputBalanceFormatted} {swapTokenInSymbol}{" "}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSwapAmountInput(formatUnits(activeInputBalance, 18))
+          {/* Token Pair Row */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto 1fr",
+              gap: "8px",
+              alignItems: "end",
+              marginBottom: "10px",
+            }}
+          >
+            <div>
+              <label
+                htmlFor="fuse-swap-token-in"
+                className="fuse-eyebrow"
+                style={{ display: "block", marginBottom: "4px" }}
+              >
+                FROM
+              </label>
+              <select
+                id="fuse-swap-token-in"
+                className="fuse-select"
+                style={{ width: "100%" }}
+                value={swapTokenInSymbol}
+                onChange={(e) => {
+                  const nextIn = e.target.value as MezoTokenSymbol;
+                  setSwapTokenInSymbol(nextIn);
+                  if (nextIn === swapTokenOutSymbol) {
+                    setSwapTokenOutSymbol(nextIn === "MUSD" ? "BTC" : "MUSD");
                   }
-                >
-                  Max
-                </button>
-              </span>
-            )}
+                }}
+              >
+                <option value="BTC">BTC</option>
+                <option value="MUSD">MUSD</option>
+                <option value="MEZO">MEZO</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleFlipSwapPair}
+              className="fuse-btn fuse-btn--secondary fuse-btn--sm"
+              title="Flip token pair"
+              aria-label="Flip swap token pair"
+            >
+              ⇄
+            </button>
+
+            <div>
+              <label
+                htmlFor="fuse-swap-token-out"
+                className="fuse-eyebrow"
+                style={{ display: "block", marginBottom: "4px" }}
+              >
+                TO
+              </label>
+              <select
+                id="fuse-swap-token-out"
+                className="fuse-select"
+                style={{ width: "100%" }}
+                value={swapTokenOutSymbol}
+                onChange={(e) => setSwapTokenOutSymbol(e.target.value as MezoTokenSymbol)}
+              >
+                <option value="MUSD">MUSD</option>
+                <option value="BTC">BTC</option>
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label htmlFor="fuse-swap-slippage">Slippage Tolerance: </label>
+          {/* Recessed Input Well */}
+          <div
+            className="fuse-input-well"
+            style={{
+              borderColor: isInsufficientBalance ? "#A0174A" : undefined,
+              marginBottom: "10px",
+            }}
+          >
+            <div className="fuse-input-well__header">
+              <label htmlFor="fuse-swap-amount" className="fuse-eyebrow">
+                AMOUNT IN ({swapTokenInSymbol})
+              </label>
+              {isConnected && (
+                <span className="fuse-mono fuse-num" style={{ fontSize: "11px", color: "#4E535A" }}>
+                  Balance: {activeInputBalanceFormatted} {swapTokenInSymbol}{" "}
+                  <button
+                    type="button"
+                    onClick={() => setSwapAmountInput(formatUnits(activeInputBalance, 18))}
+                    className="fuse-btn fuse-btn--quiet fuse-btn--sm"
+                    style={{
+                      minHeight: "20px",
+                      padding: "0 6px",
+                      marginLeft: "4px",
+                      border: "1px solid #747980",
+                    }}
+                  >
+                    MAX
+                  </button>
+                </span>
+              )}
+            </div>
+
+            <div className="fuse-input-well__row">
+              <input
+                id="fuse-swap-amount"
+                type="text"
+                inputMode="decimal"
+                value={swapAmountInput}
+                onChange={(e) => setSwapAmountInput(e.target.value)}
+                placeholder="0.0"
+                className="fuse-amount-input"
+              />
+              <span className="fuse-mono" style={{ fontWeight: 700, fontSize: "14px" }}>
+                {swapTokenInSymbol}
+              </span>
+            </div>
+          </div>
+
+          {/* Slippage Tolerance Control */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+              marginBottom: "10px",
+            }}
+          >
+            <div>
+              <label
+                htmlFor="fuse-swap-slippage"
+                className="fuse-eyebrow"
+                style={{ display: "block" }}
+              >
+                MAX SLIPPAGE
+              </label>
+              <span style={{ fontSize: "11px", color: "#4E535A" }}>
+                If the price moves more than {(slippageBps / 100).toFixed(1)}%, the swap cancels.
+              </span>
+            </div>
             <select
               id="fuse-swap-slippage"
+              className="fuse-select"
+              style={{ minHeight: "32px", padding: "4px 28px 4px 8px", fontSize: "12px" }}
               value={slippageBps}
               onChange={(e) => setSlippageBps(Number(e.target.value))}
             >
-              <option value={10}>0.10% (10 bps)</option>
-              <option value={50}>0.50% (50 bps)</option>
-              <option value={100}>1.00% (100 bps)</option>
+              <option value={10}>0.1%</option>
+              <option value={50}>0.5%</option>
+              <option value={100}>1.0%</option>
             </select>
           </div>
 
           {quoteLoading && (
-            <p data-fuse-state="quote-loading">Loading swap quote from Tigris Router...</p>
+            <p
+              data-fuse-state="quote-loading"
+              className="fuse-mono"
+              style={{ fontSize: "12px", color: "#4E535A", padding: "8px 0" }}
+            >
+              Getting your quote...
+            </p>
           )}
 
           {swapQuote && (
-            <dl data-fuse-section="quote-breakdown">
-              <dt>Input Amount:</dt>
-              <dd data-fuse-field="amount-in">
-                {formatTokenAmount(swapQuote.amountIn, 18)} {swapTokenInSymbol}
-                {swapQuote.amountInUsd !== null && ` (${formatUsd(swapQuote.amountInUsd)})`}
-              </dd>
-
-              <dt>
-                Builder Fee ({swapQuote.feePercentFormatted} to{" "}
-                {builderStatus?.metadata.name ?? shortenAddress(builderAddress)}{" "}
-                <small>(self-reported)</small>):
-              </dt>
-              <dd data-fuse-field="fee-amount">
-                <strong>
-                  {formatTokenAmount(swapQuote.feeAmount, 18)} {swapTokenInSymbol} (
-                  {swapQuote.feePercentFormatted})
-                </strong>
-                {swapQuote.feeUsd !== null && ` (${formatUsd(swapQuote.feeUsd)})`}
-              </dd>
-
-              <dt>Net Amount Routed to Tigris:</dt>
-              <dd data-fuse-field="net-amount">
-                {formatTokenAmount(swapQuote.netAmount, 18)} {swapTokenInSymbol}
-                {swapQuote.netAmountUsd !== null && ` (${formatUsd(swapQuote.netAmountUsd)})`}
-              </dd>
-
-              <dt>Expected Output:</dt>
-              <dd data-fuse-field="expected-out">
-                {formatTokenAmount(swapQuote.expectedOut, 18)} {swapTokenOutSymbol}
-                {swapQuote.expectedOutUsd !== null && ` (${formatUsd(swapQuote.expectedOutUsd)})`}
-              </dd>
-
-              <dt>Minimum Received ({(swapQuote.slippageBps / 100).toFixed(2)}% max slippage):</dt>
-              <dd data-fuse-field="min-received">
-                <strong>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {/* Outcome Headline Card */}
+              <div
+                style={{
+                  border: "1px solid #141619",
+                  background: "#F6F4EE",
+                  padding: "10px 12px",
+                }}
+              >
+                <div className="fuse-eyebrow">YOU GET AT LEAST</div>
+                <div
+                  className="fuse-num"
+                  style={{
+                    fontSize: "20px",
+                    fontWeight: 700,
+                    color: "#141619",
+                    marginTop: "2px",
+                  }}
+                >
                   {formatTokenAmount(swapQuote.amountOutMin, 18)} {swapTokenOutSymbol}
-                </strong>
-                {swapQuote.amountOutMinUsd !== null && ` (${formatUsd(swapQuote.amountOutMinUsd)})`}
-              </dd>
+                  {swapQuote.amountOutMinUsd !== null && (
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 400,
+                        color: "#4E535A",
+                        marginLeft: "6px",
+                      }}
+                    >
+                      ({formatUsd(swapQuote.amountOutMinUsd)})
+                    </span>
+                  )}
+                </div>
+                {swapExchangeRate && (
+                  <div
+                    className="fuse-mono fuse-num"
+                    style={{ fontSize: "11px", color: "#4E535A", marginTop: "2px" }}
+                  >
+                    Rate: 1 {swapTokenInSymbol} = {swapExchangeRate} {swapTokenOutSymbol}
+                  </div>
+                )}
+              </div>
 
-              <dt>Approval Method:</dt>
-              <dd data-fuse-field="execution-method">
-                {swapTokenInSymbol === "MUSD" && !isBitcoinWallet
-                  ? "Single-transaction EIP-2612 MUSD Permit (swapWithPermit)"
-                  : "Standard ERC-20 Approve + Swap"}
-              </dd>
-            </dl>
+              {/* Wiring Split Schematic */}
+              <WiringSplitDiagram
+                inputLabel={`${formatTokenAmount(swapQuote.amountIn, 18)} ${swapTokenInSymbol}`}
+                netLabel={`${formatTokenAmount(swapQuote.netAmount, 18)} ${swapTokenInSymbol}`}
+                builderFeeLabel={`${formatTokenAmount(swapQuote.feeAmount, 18)} ${swapTokenInSymbol}`}
+                targetProtocolLabel="TIGRIS DEX"
+                feeBps={swapQuote.feeBps}
+                blocked={Boolean(builderStatus?.needsHigherApproval)}
+              />
+
+              {/* Dotted Leader-Line Receipt */}
+              <dl className="fuse-receipt" data-fuse-section="quote-breakdown">
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">You get at least ({(swapQuote.slippageBps / 100).toFixed(1)}% max slippage)</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="min-received">
+                    <strong>
+                      {formatTokenAmount(swapQuote.amountOutMin, 18)} {swapTokenOutSymbol}
+                    </strong>
+                    {swapQuote.amountOutMinUsd !== null && ` (${formatUsd(swapQuote.amountOutMinUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Expected output</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="expected-out">
+                    {formatTokenAmount(swapQuote.expectedOut, 18)} {swapTokenOutSymbol}
+                    {swapQuote.expectedOutUsd !== null && ` (${formatUsd(swapQuote.expectedOutUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Input amount</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="amount-in">
+                    {formatTokenAmount(swapQuote.amountIn, 18)} {swapTokenInSymbol}
+                    {swapQuote.amountInUsd !== null && ` (${formatUsd(swapQuote.amountInUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">
+                    Partner fee ({swapQuote.feePercentFormatted} · Self-reported)
+                  </dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd
+                    className="fuse-receipt__val"
+                    data-fuse-field="fee-amount"
+                    style={{ color: swapQuote.feeBps > 0 ? "#9E3B0E" : "#141619" }}
+                  >
+                    <strong>
+                      {formatTokenAmount(swapQuote.feeAmount, 18)} {swapTokenInSymbol} (
+                      {swapQuote.feePercentFormatted})
+                    </strong>
+                    {swapQuote.feeUsd !== null && ` (${formatUsd(swapQuote.feeUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Swapped amount after fee</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="net-amount">
+                    {formatTokenAmount(swapQuote.netAmount, 18)} {swapTokenInSymbol}
+                    {swapQuote.netAmountUsd !== null && ` (${formatUsd(swapQuote.netAmountUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Signing mode</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="execution-method">
+                    {swapTokenInSymbol === "MUSD" && !isBitcoinWallet
+                      ? "One signature · Permit + Swap"
+                      : `2-step allow ${swapTokenInSymbol} + Swap`}
+                  </dd>
+                </div>
+              </dl>
+            </div>
           )}
         </fieldset>
       )}
 
-      {/* 5B. SAVE TAB */}
+      {/* 6B. SAVE TAB */}
       {activeTab === "save" && (
-        <fieldset data-fuse-panel="save">
-          <legend>Save MUSD in Mezo Savings Vault (sMUSD)</legend>
+        <fieldset data-fuse-panel="save" className="fuse-widget-ticket__section">
+          <legend className="fuse-eyebrow" style={{ marginBottom: "8px" }}>
+            Save MUSD
+          </legend>
 
-          <div>
-            <label htmlFor="fuse-save-amount">Amount to Save (MUSD): </label>
-            <input
-              id="fuse-save-amount"
-              type="text"
-              inputMode="decimal"
-              value={saveAmountInput}
-              onChange={(e) => setSaveAmountInput(e.target.value)}
-              placeholder="0.0"
-            />
-            {isConnected && (
-              <span>
-                {" "}
-                MUSD Balance: {activeInputBalanceFormatted} MUSD (Current sMUSD:{" "}
-                {formatTokenAmount(balances.sMUSD, 18)} sMUSD){" "}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSaveAmountInput(formatUnits(activeInputBalance, 18))
-                  }
-                >
-                  Max
-                </button>
+          <div
+            className="fuse-input-well"
+            style={{
+              borderColor: isInsufficientBalance ? "#A0174A" : undefined,
+              marginBottom: "10px",
+            }}
+          >
+            <div className="fuse-input-well__header">
+              <label htmlFor="fuse-save-amount" className="fuse-eyebrow">
+                AMOUNT TO SAVE (MUSD)
+              </label>
+              {isConnected && (
+                <span className="fuse-mono fuse-num" style={{ fontSize: "11px", color: "#4E535A" }}>
+                  Balance: {activeInputBalanceFormatted} MUSD · Shares:{" "}
+                  {formatTokenAmount(balances.sMUSD, 18)} sMUSD{" "}
+                  <button
+                    type="button"
+                    onClick={() => setSaveAmountInput(formatUnits(activeInputBalance, 18))}
+                    className="fuse-btn fuse-btn--quiet fuse-btn--sm"
+                    style={{
+                      minHeight: "20px",
+                      padding: "0 6px",
+                      marginLeft: "4px",
+                      border: "1px solid #747980",
+                    }}
+                  >
+                    MAX
+                  </button>
+                </span>
+              )}
+            </div>
+
+            <div className="fuse-input-well__row">
+              <input
+                id="fuse-save-amount"
+                type="text"
+                inputMode="decimal"
+                value={saveAmountInput}
+                onChange={(e) => setSaveAmountInput(e.target.value)}
+                placeholder="0.0"
+                className="fuse-amount-input"
+              />
+              <span className="fuse-mono" style={{ fontWeight: 700, fontSize: "14px" }}>
+                MUSD
               </span>
-            )}
+            </div>
           </div>
 
           {quoteLoading && (
-            <p data-fuse-state="quote-loading">Calculating MUSD Savings Vault quote...</p>
+            <p
+              data-fuse-state="quote-loading"
+              className="fuse-mono"
+              style={{ fontSize: "12px", color: "#4E535A", padding: "8px 0" }}
+            >
+              Getting your quote...
+            </p>
           )}
 
           {saveQuote && (
-            <dl data-fuse-section="quote-breakdown">
-              <dt>Input Amount:</dt>
-              <dd data-fuse-field="amount-in">
-                {formatTokenAmount(saveQuote.amountIn, 18)} MUSD
-                {saveQuote.amountInUsd !== null && ` (${formatUsd(saveQuote.amountInUsd)})`}
-              </dd>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {/* Outcome Headline Card */}
+              <div
+                style={{
+                  border: "1px solid #141619",
+                  background: "#F6F4EE",
+                  padding: "10px 12px",
+                }}
+              >
+                <div className="fuse-eyebrow">SAVINGS SHARES RECEIVED</div>
+                <div
+                  className="fuse-num"
+                  style={{
+                    fontSize: "20px",
+                    fontWeight: 700,
+                    color: "#141619",
+                    marginTop: "2px",
+                  }}
+                >
+                  {formatTokenAmount(saveQuote.sharesOut, 18)} sMUSD
+                  {saveQuote.sharesOutUsd !== null && (
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 400,
+                        color: "#4E535A",
+                        marginLeft: "6px",
+                      }}
+                    >
+                      ({formatUsd(saveQuote.sharesOutUsd)})
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: "11px", color: "#4E535A", marginTop: "2px" }}>
+                  Minted directly to your wallet from the Mezo MUSD Savings Vault.
+                </div>
+              </div>
 
-              <dt>
-                Builder Fee ({saveQuote.feePercentFormatted} to{" "}
-                {builderStatus?.metadata.name ?? shortenAddress(builderAddress)}{" "}
-                <small>(self-reported)</small>):
-              </dt>
-              <dd data-fuse-field="fee-amount">
-                <strong>
-                  {formatTokenAmount(saveQuote.feeAmount, 18)} MUSD (
-                  {saveQuote.feePercentFormatted})
-                </strong>
-                {saveQuote.feeUsd !== null && ` (${formatUsd(saveQuote.feeUsd)})`}
-              </dd>
+              <WiringSplitDiagram
+                inputLabel={`${formatTokenAmount(saveQuote.amountIn, 18)} MUSD`}
+                netLabel={`${formatTokenAmount(saveQuote.netAmount, 18)} MUSD`}
+                builderFeeLabel={`${formatTokenAmount(saveQuote.feeAmount, 18)} MUSD`}
+                targetProtocolLabel="MUSD VAULT"
+                feeBps={saveQuote.feeBps}
+                blocked={Boolean(builderStatus?.needsHigherApproval)}
+              />
 
-              <dt>Minimum sMUSD Received (transferred directly to your wallet):</dt>
-              <dd data-fuse-field="min-received">
-                <strong>{formatTokenAmount(saveQuote.sharesOut, 18)} sMUSD</strong>
-                {saveQuote.sharesOutUsd !== null && ` (${formatUsd(saveQuote.sharesOutUsd)})`}
-              </dd>
+              <dl className="fuse-receipt" data-fuse-section="quote-breakdown">
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Savings shares received</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="min-received">
+                    <strong>{formatTokenAmount(saveQuote.sharesOut, 18)} sMUSD</strong>
+                    {saveQuote.sharesOutUsd !== null && ` (${formatUsd(saveQuote.sharesOutUsd)})`}
+                  </dd>
+                </div>
 
-              <dt>MUSD Savings Vault Contract:</dt>
-              <dd>
-                <code>{MEZO_TESTNET_ADDRESSES.savingsVault}</code>
-              </dd>
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Input amount</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="amount-in">
+                    {formatTokenAmount(saveQuote.amountIn, 18)} MUSD
+                    {saveQuote.amountInUsd !== null && ` (${formatUsd(saveQuote.amountInUsd)})`}
+                  </dd>
+                </div>
 
-              <dt>Approval Method:</dt>
-              <dd data-fuse-field="execution-method">
-                {!isBitcoinWallet
-                  ? "Single-transaction EIP-2612 MUSD Permit (saveWithPermit)"
-                  : "Bitcoin Smart Account: 2-step ERC-20 Approve + Save"}
-              </dd>
-            </dl>
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">
+                    Partner fee ({saveQuote.feePercentFormatted} · Self-reported)
+                  </dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd
+                    className="fuse-receipt__val"
+                    data-fuse-field="fee-amount"
+                    style={{ color: saveQuote.feeBps > 0 ? "#9E3B0E" : "#141619" }}
+                  >
+                    <strong>
+                      {formatTokenAmount(saveQuote.feeAmount, 18)} MUSD (
+                      {saveQuote.feePercentFormatted})
+                    </strong>
+                    {saveQuote.feeUsd !== null && ` (${formatUsd(saveQuote.feeUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Savings vault</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val">
+                    <code>{shortenAddress(MEZO_TESTNET_ADDRESSES.savingsVault, 6)}</code>
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Signing mode</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="execution-method">
+                    {!isBitcoinWallet
+                      ? "One signature · Permit + Save"
+                      : "Bitcoin wallet: 2-step allow MUSD + Save"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
           )}
         </fieldset>
       )}
 
-      {/* 5C. LOCK TAB */}
+      {/* 6C. LOCK TAB */}
       {activeTab === "lock" && (
-        <fieldset data-fuse-panel="lock">
-          <legend>Lock BTC into Mezo VeBTC (createLockFor)</legend>
+        <fieldset data-fuse-panel="lock" className="fuse-widget-ticket__section">
+          <legend className="fuse-eyebrow" style={{ marginBottom: "8px" }}>
+            Lock BTC
+          </legend>
 
-          <div>
-            <label htmlFor="fuse-lock-amount">BTC Amount to Lock: </label>
-            <input
-              id="fuse-lock-amount"
-              type="text"
-              inputMode="decimal"
-              value={lockAmountInput}
-              onChange={(e) => setLockAmountInput(e.target.value)}
-              placeholder="0.0001"
-            />
-            {isConnected && (
-              <span>
-                {" "}
-                BTC Balance: {activeInputBalanceFormatted} BTC{" "}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setLockAmountInput(formatUnits(activeInputBalance, 18))
-                  }
-                >
-                  Max
-                </button>
+          <div
+            className="fuse-input-well"
+            style={{
+              borderColor: isInsufficientBalance ? "#A0174A" : undefined,
+              marginBottom: "10px",
+            }}
+          >
+            <div className="fuse-input-well__header">
+              <label htmlFor="fuse-lock-amount" className="fuse-eyebrow">
+                BTC AMOUNT TO LOCK
+              </label>
+              {isConnected && (
+                <span className="fuse-mono fuse-num" style={{ fontSize: "11px", color: "#4E535A" }}>
+                  Balance: {activeInputBalanceFormatted} BTC{" "}
+                  <button
+                    type="button"
+                    onClick={() => setLockAmountInput(formatUnits(activeInputBalance, 18))}
+                    className="fuse-btn fuse-btn--quiet fuse-btn--sm"
+                    style={{
+                      minHeight: "20px",
+                      padding: "0 6px",
+                      marginLeft: "4px",
+                      border: "1px solid #747980",
+                    }}
+                  >
+                    MAX
+                  </button>
+                </span>
+              )}
+            </div>
+
+            <div className="fuse-input-well__row">
+              <input
+                id="fuse-lock-amount"
+                type="text"
+                inputMode="decimal"
+                value={lockAmountInput}
+                onChange={(e) => setLockAmountInput(e.target.value)}
+                placeholder="0.0001"
+                className="fuse-amount-input"
+              />
+              <span className="fuse-mono" style={{ fontWeight: 700, fontSize: "14px" }}>
+                BTC
               </span>
-            )}
+            </div>
           </div>
 
-          <div data-fuse-section="lock-presets">
-            <span>Lock Duration (Mezo Testnet maxLockTime = 30 days, rounded to Thursday 00:00 UTC): </span>
-            {LOCK_DURATION_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                data-fuse-preset={preset.id}
-                aria-pressed={lockDurationSeconds === preset.seconds}
-                onClick={() => setLockDurationSeconds(preset.seconds)}
-              >
-                {preset.label}
-                {lockDurationSeconds === preset.seconds ? " [Selected]" : ""}
-              </button>
-            ))}
+          <div data-fuse-section="lock-presets" style={{ marginBottom: "10px" }}>
+            <div className="fuse-eyebrow" style={{ marginBottom: "6px" }}>
+              LOCK DURATION (MAX 30 DAYS ON TESTNET)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+              {LOCK_DURATION_PRESETS.map((preset) => {
+                const selected = lockDurationSeconds === preset.seconds;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-fuse-preset={preset.id}
+                    aria-pressed={selected}
+                    onClick={() => setLockDurationSeconds(preset.seconds)}
+                    className={`fuse-btn fuse-btn--sm ${
+                      selected ? "fuse-btn--primary" : "fuse-btn--secondary"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {quoteLoading && (
-            <p data-fuse-state="quote-loading">Calculating VeBTC lock quote...</p>
+            <p
+              data-fuse-state="quote-loading"
+              className="fuse-mono"
+              style={{ fontSize: "12px", color: "#4E535A", padding: "8px 0" }}
+            >
+              Getting your quote...
+            </p>
           )}
 
           {lockQuote && (
-            <dl data-fuse-section="quote-breakdown">
-              <dt>Gross BTC Input:</dt>
-              <dd data-fuse-field="amount-in">
-                {formatTokenAmount(lockQuote.amountIn, 18)} BTC
-                {lockQuote.amountInUsd !== null && ` (${formatUsd(lockQuote.amountInUsd)})`}
-              </dd>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "10px" }}>
+              {/* Outcome Headline Card: Lead with real unlock date */}
+              <div
+                style={{
+                  border: "1px solid #141619",
+                  background: "#F6F4EE",
+                  padding: "10px 12px",
+                }}
+              >
+                <div className="fuse-eyebrow">UNLOCK DATE</div>
+                <div
+                  className="fuse-num"
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: 700,
+                    color: "#141619",
+                    marginTop: "2px",
+                  }}
+                >
+                  Unlocks {lockQuote.unlockDateFormatted}
+                </div>
+                <div
+                  className="fuse-mono fuse-num"
+                  style={{ fontSize: "11px", color: "#4E535A", marginTop: "2px" }}
+                >
+                  {Math.round(lockQuote.lockDurationSeconds / 86400)} days · Estimated{" "}
+                  {lockQuote.estimatedVotingPowerFormatted} veBTC voting power
+                </div>
+              </div>
 
-              <dt>
-                Builder Fee ({lockQuote.feePercentFormatted} to{" "}
-                {builderStatus?.metadata.name ?? shortenAddress(builderAddress)}{" "}
-                <small>(self-reported)</small>):
-              </dt>
-              <dd data-fuse-field="fee-amount">
-                <strong>
-                  {formatTokenAmount(lockQuote.feeAmount, 18)} BTC (
-                  {lockQuote.feePercentFormatted})
-                </strong>
-                {lockQuote.feeUsd !== null && ` (${formatUsd(lockQuote.feeUsd)})`}
-              </dd>
+              <WiringSplitDiagram
+                inputLabel={`${formatTokenAmount(lockQuote.amountIn, 18)} BTC`}
+                netLabel={`${formatTokenAmount(lockQuote.netAmount, 18)} BTC`}
+                builderFeeLabel={`${formatTokenAmount(lockQuote.feeAmount, 18)} BTC`}
+                targetProtocolLabel="MEZO VEBTC"
+                feeBps={lockQuote.feeBps}
+                blocked={Boolean(builderStatus?.needsHigherApproval)}
+              />
 
-              <dt>Net BTC Locked in VeBTC (veBTC NFT minted to you):</dt>
-              <dd data-fuse-field="min-received">
-                <strong>{formatTokenAmount(lockQuote.netAmount, 18)} BTC</strong>
-                {lockQuote.netAmountUsd !== null && ` (${formatUsd(lockQuote.netAmountUsd)})`}
-              </dd>
+              <dl className="fuse-receipt" data-fuse-section="quote-breakdown">
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Unlock date</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="unlock-date">
+                    <strong>
+                      {Math.round(lockQuote.lockDurationSeconds / 86400)} days · Unlocks{" "}
+                      {lockQuote.unlockDateFormatted}
+                    </strong>
+                  </dd>
+                </div>
 
-              <dt>Lock Duration &amp; Unlock Date (Thursday 00:00 UTC epoch):</dt>
-              <dd data-fuse-field="unlock-date">
-                <strong>
-                  {Math.round(lockQuote.lockDurationSeconds / 86400)} days — Unlocks{" "}
-                  {lockQuote.unlockDateFormatted}
-                </strong>
-              </dd>
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">BTC locked after fee</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="min-received">
+                    <strong>{formatTokenAmount(lockQuote.netAmount, 18)} BTC</strong>
+                    {lockQuote.netAmountUsd !== null && ` (${formatUsd(lockQuote.netAmountUsd)})`}
+                  </dd>
+                </div>
 
-              <dt>Estimated Initial veBTC Voting Power:</dt>
-              <dd data-fuse-field="voting-power">
-                {lockQuote.estimatedVotingPowerFormatted} veBTC
-              </dd>
-            </dl>
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">BTC you send</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="amount-in">
+                    {formatTokenAmount(lockQuote.amountIn, 18)} BTC
+                    {lockQuote.amountInUsd !== null && ` (${formatUsd(lockQuote.amountInUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">
+                    Partner fee ({lockQuote.feePercentFormatted} · Self-reported)
+                  </dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd
+                    className="fuse-receipt__val"
+                    data-fuse-field="fee-amount"
+                    style={{ color: lockQuote.feeBps > 0 ? "#9E3B0E" : "#141619" }}
+                  >
+                    <strong>
+                      {formatTokenAmount(lockQuote.feeAmount, 18)} BTC (
+                      {lockQuote.feePercentFormatted})
+                    </strong>
+                    {lockQuote.feeUsd !== null && ` (${formatUsd(lockQuote.feeUsd)})`}
+                  </dd>
+                </div>
+
+                <div className="fuse-receipt__row">
+                  <dt className="fuse-receipt__term">Estimated voting power</dt>
+                  <span className="fuse-receipt__dots" />
+                  <dd className="fuse-receipt__val" data-fuse-field="voting-power">
+                    {lockQuote.estimatedVotingPowerFormatted} veBTC
+                  </dd>
+                </div>
+              </dl>
+            </div>
           )}
 
-          {/* Mandatory Copy Rule from FRONTEND.md: Explain that veBTC cannot be withdrawn before the lock expires, before the user locks */}
-          <div role="note" data-fuse-notice="vebtc-lock-warning">
-            <p>
-              <strong>Important Lock Notice:</strong> Locked BTC is converted into a <code>veBTC</code> NFT and{" "}
-              <strong>cannot be withdrawn before the lock expires</strong> ({lockQuote?.unlockDateFormatted ?? "the unlock date"}).
+          {/* Mandatory Lock Notice in plain copy */}
+          <div
+            role="note"
+            data-fuse-notice="vebtc-lock-warning"
+            className="fuse-alert fuse-alert--attention"
+          >
+            <p style={{ fontSize: "12px", marginBottom: "8px" }}>
+              Locked BTC becomes a <code>veBTC</code> position you can&apos;t withdraw until the unlock date (
+              <strong>{lockQuote?.unlockDateFormatted ?? "the unlock date"}</strong>).
             </p>
-            <label htmlFor="fuse-lock-acknowledge">
+            <label
+              htmlFor="fuse-lock-acknowledge"
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "8px",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
               <input
                 id="fuse-lock-acknowledge"
                 type="checkbox"
                 checked={lockWarningAcknowledged}
                 onChange={(e) => setLockWarningAcknowledged(e.target.checked)}
-              />{" "}
-              I understand that my locked BTC cannot be withdrawn until the lock expires.
+                style={{ marginTop: "2px", accentColor: "#141619" }}
+              />
+              <span>
+                I can&apos;t withdraw this BTC before{" "}
+                {lockQuote?.unlockDateFormatted ?? "the unlock date"}.
+              </span>
             </label>
           </div>
         </fieldset>
       )}
 
-      {/* 6. Validation, Error, Pending & Submit Controls */}
-      <div data-fuse-section="submit-controls">
+      {/* 7. Validation, Error, Pending, Confirmed Receipt & Submit Controls */}
+      <div
+        data-fuse-section="submit-controls"
+        className="fuse-widget-ticket__section"
+        style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+      >
         {isInsufficientBalance && (
-          <div role="alert" data-fuse-state="insufficient-balance">
-            <strong>Insufficient balance:</strong> Your {activeInputSymbol} balance (
-            {activeInputBalanceFormatted} {activeInputSymbol}) is less than the requested input amount.
+          <div
+            role="alert"
+            data-fuse-state="insufficient-balance"
+            className="fuse-alert fuse-alert--tripped"
+          >
+            <strong>Insufficient balance:</strong> Balance: {activeInputBalanceFormatted}{" "}
+            {activeInputSymbol} · Enter a smaller amount.
           </div>
         )}
 
         {quoteError && (
-          <div role="alert" data-fuse-state="quote-error">
+          <div
+            role="alert"
+            data-fuse-state="quote-error"
+            className="fuse-alert fuse-alert--attention"
+          >
             <strong>Quote notice:</strong> {quoteError}
           </div>
         )}
 
         {actionPending && (
-          <output aria-live="polite" data-fuse-state="action-pending">
-            <p>
-              <strong>{describeExecutionStep(executionStep)}</strong>
+          <output
+            aria-live="polite"
+            data-fuse-state="action-pending"
+            className="fuse-alert fuse-alert--attention"
+          >
+            <div className="fuse-alert__title">
+              <FuseOpenSwitchSchematicSvg color="#7C4D07" />
+              <span>In progress</span>
+            </div>
+            <p style={{ fontSize: "12px", fontWeight: 700 }}>
+              {describeExecutionStep(executionStep)}
             </p>
           </output>
         )}
 
         {errorMessage && (
-          <div role="alert" data-fuse-state="action-error">
-            <p>
-              <strong>Error:</strong> {errorMessage}
-            </p>
+          <div
+            role="alert"
+            data-fuse-state="action-error"
+            className="fuse-alert fuse-alert--tripped"
+          >
+            <strong>Error:</strong> {errorMessage}
           </div>
         )}
 
         {lastResult && (
-          <output aria-live="polite" data-fuse-state="action-success">
-            <p>
-              <strong>Mezo Testnet Action Confirmed!</strong> (Testnet transaction — not real money)
-            </p>
-            <ul>
-              <li>
-                Routed Transaction:{" "}
+          <output
+            aria-live="polite"
+            data-fuse-state="action-success"
+            className="fuse-alert fuse-alert--approved"
+          >
+            <div className="fuse-alert__title">
+              <FuseIntactSchematicSvg color="#1D6340" />
+              <span>Done. Confirmed on Mezo Testnet</span>
+            </div>
+            <div style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div>
+                Transaction:{" "}
                 <a
                   href={lastResult.explorerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  className="fuse-mono"
                 >
-                  <code>{lastResult.txHash}</code> (View on Mezo Testnet Explorer)
+                  <code>{shortenAddress(lastResult.txHash, 8)}</code> (Explorer ↗)
                 </a>
-              </li>
-              <li>
-                Approval Method Used:{" "}
-                {lastResult.usedPermit
-                  ? "1-tx EIP-2612 MUSD Permit"
-                  : lastResult.approvalTxHash
-                    ? `ERC-20 Approve (${shortenAddress(lastResult.approvalTxHash, 6)}) + Routed Action`
-                    : "Existing Token Allowance"}
-              </li>
-            </ul>
+              </div>
+              <div>
+                Signed with:{" "}
+                <strong className="fuse-mono">
+                  {lastResult.usedPermit
+                    ? "One signature · Permit + Action"
+                    : lastResult.approvalTxHash
+                      ? `2-step allow (${shortenAddress(lastResult.approvalTxHash, 6)}) + Action`
+                      : "Existing token allowance"}
+                </strong>
+              </div>
+              <div style={{ marginTop: "4px" }}>
+                <Link
+                  href={`/receipt/${lastResult.txHash}`}
+                  className="fuse-btn fuse-btn--secondary fuse-btn--sm"
+                >
+                  View receipt
+                </Link>
+              </div>
+            </div>
           </output>
         )}
 
@@ -780,26 +1414,33 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
           disabled={!canSubmitAction}
           onClick={handleExecuteAction}
           data-fuse-action="submit"
+          className={`fuse-btn fuse-btn--block ${
+            isCapActionBlocking
+              ? "fuse-btn--secondary"
+              : "fuse-btn--primary fuse-btn--lg fuse-btn--hard-shadow"
+          }`}
         >
           {!isConnected
-            ? "Connect Wallet via Mezo Passport to Continue"
+            ? "Connect wallet to continue"
             : isWrongNetwork
-              ? "Switch to Mezo Testnet (31611) Above"
+              ? "Switch network above"
               : builderStatus?.routerPaused
-                ? "FuseRouter is Paused"
-                : builderStatus?.needsApproval || builderStatus?.needsHigherApproval
-                  ? `Approve Builder Fee (${builderStatus.feePercentFormatted}) Above First`
-                  : isInsufficientBalance
-                    ? `Insufficient ${activeInputSymbol} Balance`
-                    : activeTab === "lock" && !lockWarningAcknowledged
-                      ? "Acknowledge VeBTC Lock Expiry Notice Above"
-                      : actionPending
-                        ? describeExecutionStep(executionStep)
-                        : activeTab === "swap"
-                          ? `Swap ${swapAmountInput || "0"} ${swapTokenInSymbol} → ${swapTokenOutSymbol} (Fee: ${builderStatus?.feePercentFormatted ?? "0%"})`
-                          : activeTab === "save"
-                            ? `Save ${saveAmountInput || "0"} MUSD → sMUSD (Fee: ${builderStatus?.feePercentFormatted ?? "0%"})`
-                            : `Lock ${lockAmountInput || "0"} BTC → veBTC (Fee: ${builderStatus?.feePercentFormatted ?? "0%"})`}
+                ? "Routing is paused"
+                : builderStatus?.needsHigherApproval
+                  ? `Blocked: fee is above your ${builderStatus.userMaxFeeBps} bps cap`
+                  : builderStatus?.needsApproval
+                    ? `Approve the fee cap above first`
+                    : isInsufficientBalance
+                      ? `Insufficient ${activeInputSymbol} Balance`
+                      : activeTab === "lock" && !lockWarningAcknowledged
+                        ? "Tick the box above to continue"
+                        : actionPending
+                          ? describeExecutionStep(executionStep)
+                          : activeTab === "swap"
+                            ? `Swap ${swapAmountInput || "0"} ${swapTokenInSymbol} for ${swapTokenOutSymbol}`
+                            : activeTab === "save"
+                              ? `Save ${saveAmountInput || "0"} MUSD`
+                              : `Lock ${lockAmountInput || "0"} BTC`}
         </button>
       </div>
     </section>
