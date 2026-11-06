@@ -8,8 +8,12 @@ import {
   http,
   isAddress,
 } from "viem";
-import { usePublicClient, useWalletClient } from "wagmi";
-import { useWalletAccount } from "@mezo-org/passport";
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useWalletClient,
+} from "wagmi";
 import {
   type BuilderStatus,
   FuseClient,
@@ -48,8 +52,8 @@ export function useUserBuilderCaps(
   const wagmiPublicClient = usePublicClient({ chainId: MEZO_TESTNET_CHAIN_ID });
   const publicClient = wagmiPublicClient ?? fallbackPublicClient;
   const { data: walletClient } = useWalletClient();
-  const { accountAddress, isConnected, networkFamily, connector, chainId } =
-    useWalletAccount();
+  const { address: accountAddress, connector, isConnected } = useAccount();
+  const chainId = useChainId();
 
   const account =
     accountAddress && isAddress(accountAddress)
@@ -57,7 +61,6 @@ export function useUserBuilderCaps(
       : undefined;
   const isWrongNetwork =
     Boolean(isConnected) &&
-    networkFamily === "evm" &&
     chainId !== undefined &&
     chainId !== MEZO_TESTNET_CHAIN_ID;
   const normalizedBuilders = useMemo(
@@ -78,10 +81,10 @@ export function useUserBuilderCaps(
         connectorInfo: {
           type: connector?.type,
           id: connector?.id,
-          networkFamily,
+          networkFamily: "evm",
         },
       }),
-    [connector?.id, connector?.type, networkFamily, publicClient, walletClient],
+    [connector?.id, connector?.type, publicClient, walletClient],
   );
 
   const [statuses, setStatuses] = useState<Record<string, BuilderStatus>>({});

@@ -2,8 +2,8 @@
 
 import React, { useMemo } from "react";
 import Link from "next/link";
-import { useWalletAccount } from "@mezo-org/passport";
 import { isAddress } from "viem";
+import { useAccount } from "wagmi";
 import {
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
@@ -22,7 +22,7 @@ import { useUserBuilderCaps } from "../../hooks/useUserBuilderCaps";
 export default function UserCapsPage() {
   const { snapshot, isLoading } = useLeaderboard({ initialSort: "users" });
   const buildersList = snapshot?.builders ?? [];
-  const { isConnected } = useWalletAccount();
+  const { isConnected } = useAccount();
   const builderAddresses = useMemo(
     () => buildersList.map((builder) => builder.builder).filter((builder) => isAddress(builder)),
     [buildersList],
