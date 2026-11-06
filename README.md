@@ -2,9 +2,11 @@
 
 **Earn a fee every time your users swap, save or lock on Mezo, capped by them.**
 
-Fuse is a builder code router for Mezo. A wallet, bot or website sends its users' Mezo actions through `FuseRouter` and gets credit for each one. A builder can also charge a fee of up to 0.50%, which the user approves first. Fuse never holds funds and has no token.
+Fuse is a builder code router for Mezo. A wallet, bot or website sends its users' Mezo actions through `FuseRouter` and gets credit for each one. A builder can charge a fee of up to 0.50%, which the user approves first. Fuse never holds funds and has no token.
 
-Mezo testnet only (chain ID `31611`). There's no hosted app yet, and the UI is unstyled while the design system is being built.
+The hosted app is live at [fuse.vercel.app](https://fuse.vercel.app/). The current release targets Mezo testnet only, chain ID `31611`.
+
+[Open the app](https://fuse.vercel.app/) · [Try the widget](https://fuse.vercel.app/widget?builder=0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283&action=save) · [Read the docs](https://fuse.vercel.app/docs) · [Install the SDK](https://www.npmjs.com/package/mezo-fuse)
 
 ## How it works
 
@@ -21,6 +23,59 @@ Mezo testnet only (chain ID `31611`). There's no hosted app yet, and the UI is u
 - Approving a cap gives a builder no access to the user's funds.
 - `revokeBuilder` removes a cap at any time and still works while the router is paused.
 - veBTC locks are created for the user, so the user owns the lock.
+
+## Architecture
+
+Fuse has three layers. The web app and SDK prepare transactions and read state. `FuseRouter` enforces the fee rules and routes the action. Mezo protocol contracts receive the funds directly, while `Routed` events feed the public metrics and paid analytics surfaces.
+
+```mermaid
+flowchart LR
+    User["User or integrating app"] --> Wallets["Passport and RainbowKit wallets"]
+    Wallets --> Web["Next.js web app"]
+    Web --> SDK["mezo-fuse SDK"]
+    Web --> API["Next.js API routes"]
+    SDK --> RPC["Mezo RPC"]
+    API --> SDK
+    RPC --> Router["FuseRouter on Mezo testnet"]
+    Router --> Tigris["Tigris PoolRouter"]
+    Router --> Savings["MUSD Savings Vault"]
+    Router --> VeBTC["veBTC"]
+    Router --> Events["Routed events"]
+    Events --> RPC
+    API --> Public["Public leaderboard"]
+    API --> X402["x402 paid analytics"]
+    X402 --> Facilitator["x402 facilitator"]
+    Facilitator --> RPC
+```
+
+The transaction path is deliberately non-custodial. The router splits each action in one transaction, sends the partner fee to the registered builder, sends the remaining amount to the Mezo protocol, and keeps no balance.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Web app or SDK
+    participant Oracle as Skip BTC/USD oracle
+    participant Router as FuseRouter
+    participant Protocol as Mezo protocol
+    participant Indexer as API and event readers
+
+    User->>UI: Connect wallet and choose action
+    UI->>Oracle: Read current BTC/USD price when needed
+    UI->>Router: Read builder, fee cap, and pause state
+    Router-->>UI: Return quote inputs and approval state
+    User->>UI: Approve or raise builder fee cap if needed
+    UI->>Router: Submit approveBuilder
+    Router-->>UI: Confirm cap on chain
+    User->>UI: Confirm swap, save, or lock
+    UI->>Router: Submit routed action
+    Router->>Router: Check builder, cap, fee, and action limits
+    Router->>Protocol: Route net amount to Mezo protocol
+    Router-->>Indexer: Emit Routed event
+    Protocol-->>User: Deliver output or create user-owned lock
+    Indexer-->>UI: Return receipt, metrics, and explorer link
+```
+
+Editable source files for these diagrams live in [`docs/architecture`](docs/architecture/).
 
 ## Deployments on Mezo testnet
 
@@ -50,6 +105,7 @@ Mezo contracts the router uses:
 
 ```text
 fuse/
+├── docs/           Architecture diagrams and project notes
 ├── contracts/      Foundry project: FuseRouter, deploy script, unit, fuzz and fork tests
 ├── packages/sdk/   mezo-fuse: FuseClient, quotes, MUSD permit, oracle, leaderboard indexer, x402
 └── apps/web/       @fuse/web: Next.js app with the widget, builders console, leaderboard, docs and APIs
@@ -74,6 +130,15 @@ pnpm --filter @fuse/web dev
 | Docs | `http://localhost:3000/docs` |
 | Leaderboard API | `http://localhost:3000/api/leaderboard` |
 | Paid analytics API | `http://localhost:3000/api/analytics/0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283` |
+
+The same surfaces are deployed at [fuse.vercel.app](https://fuse.vercel.app/). The widget supports Bitcoin wallets through Passport, MetaMask, injected browser wallet extensions, and WalletConnect for EVM accounts.
+
+### Wallet connections
+
+- Bitcoin: Unisat, OKX and Xverse through Mezo Passport.
+- EVM: MetaMask, injected browser wallet extensions and WalletConnect.
+- Network: Mezo testnet, chain ID `31611`.
+- Fee approvals and routed actions are signed by the connected wallet. Fuse never receives custody of the user's funds.
 
 The widget reads `builder` and `action` (`swap`, `save` or `lock`) from the URL. Without a `builder` it uses the default paid builder.
 
@@ -135,7 +200,7 @@ Serve `apps/web` and point an iframe at its `/widget` route:
 
 ### Use the SDK
 
-Install it with `npm install mezo-fuse viem`. The package is on npm as [`mezo-fuse`](https://www.npmjs.com/package/mezo-fuse).
+Install it with `npm install mezo-fuse@^0.1.1 viem`. The package is on npm as [`mezo-fuse`](https://www.npmjs.com/package/mezo-fuse).
 
 ```ts
 import { createPublicClient, http, parseUnits } from "viem";
@@ -296,6 +361,7 @@ Copy `.env.example` to `.env`.
 | `FUSE_OWNER_ADDRESS` | Router owner, set once at deployment. Use a Safe multisig on mainnet |
 | `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_FUSE_ROUTER`, `NEXT_PUBLIC_DEPLOY_BLOCK` | Chain, router and first block for the web app |
 | `NEXT_PUBLIC_SKIP_BTC_USD` | BTC/USD oracle for USD values |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WalletConnect project ID for the EVM wallet modal |
 | `X402_FACILITATOR_URL`, `X402_PAY_TO` | Paid analytics facilitator and payee |
 
 ## Owner powers

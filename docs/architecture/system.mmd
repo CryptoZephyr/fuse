@@ -1,0 +1,17 @@
+flowchart LR
+    User["User or integrating app"] --> Wallets["Passport and RainbowKit wallets"]
+    Wallets --> Web["Next.js web app"]
+    Web --> SDK["mezo-fuse SDK"]
+    Web --> API["Next.js API routes"]
+    SDK --> RPC["Mezo RPC"]
+    API --> SDK
+    RPC --> Router["FuseRouter on Mezo testnet"]
+    Router --> Tigris["Tigris PoolRouter"]
+    Router --> Savings["MUSD Savings Vault"]
+    Router --> VeBTC["veBTC"]
+    Router --> Events["Routed events"]
+    Events --> RPC
+    API --> Public["Public leaderboard"]
+    API --> X402["x402 paid analytics"]
+    X402 --> Facilitator["x402 facilitator"]
+    Facilitator --> RPC

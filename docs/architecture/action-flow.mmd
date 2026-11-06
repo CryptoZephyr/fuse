@@ -1,0 +1,22 @@
+sequenceDiagram
+    actor User
+    participant UI as Web app or SDK
+    participant Oracle as Skip BTC/USD oracle
+    participant Router as FuseRouter
+    participant Protocol as Mezo protocol
+    participant Indexer as API and event readers
+
+    User->>UI: Connect wallet and choose action
+    UI->>Oracle: Read current BTC/USD price when needed
+    UI->>Router: Read builder, fee cap, and pause state
+    Router-->>UI: Return quote inputs and approval state
+    User->>UI: Approve or raise builder fee cap if needed
+    UI->>Router: Submit approveBuilder
+    Router-->>UI: Confirm cap on chain
+    User->>UI: Confirm swap, save, or lock
+    UI->>Router: Submit routed action
+    Router->>Router: Check builder, cap, fee, and action limits
+    Router->>Protocol: Route net amount to Mezo protocol
+    Router-->>Indexer: Emit Routed event
+    Protocol-->>User: Deliver output or create user-owned lock
+    Indexer-->>UI: Return receipt, metrics, and explorer link

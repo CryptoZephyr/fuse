@@ -1,11 +1,11 @@
 # mezo-fuse
 
-TypeScript SDK for [Fuse](https://github.com/CryptoZephyr/fuse), the builder code router on Mezo testnet (chain ID 31611).
+TypeScript SDK for [Fuse](https://github.com/CryptoZephyr/fuse), the builder code router on [Mezo testnet](https://fuse.vercel.app/) (chain ID `31611`).
 
 ## Install
 
 ```sh
-npm install mezo-fuse viem
+npm install mezo-fuse@^0.1.1 viem
 ```
 
 ## Use the SDK
@@ -37,6 +37,8 @@ console.log(result.explorerUrl);
 `FuseClient` also has `executeSwap`, `executeLock`, `approveBuilder`, `revokeBuilder`, quote functions and `getRoutedEvents`.
 
 MUSD swaps and saves use a single EIP-2612 permit transaction where the wallet supports it. Bitcoin wallets that use Mezo Passport smart accounts can't sign typed data, so the SDK falls back to approve, then save or swap.
+
+Quote helpers preflight the current router state before an action. They reject stale fee state, invalid builder configuration, and lock durations outside the deployed testnet limits before asking the wallet to sign.
 
 ## Current Mezo testnet addresses
 
