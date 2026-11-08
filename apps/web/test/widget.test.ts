@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { WalletDetailsParams, WalletList } from "@rainbow-me/rainbowkit";
+import type { CreateConnectorFn } from "wagmi";
 import {
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
@@ -13,6 +15,57 @@ import {
   parseBuilderMetadataURI,
 } from "mezo-fuse";
 import { maxSpendable } from "../src/lib/gasReserve";
+import { withRainbowKitDetails } from "../src/lib/passportWallets";
+
+type CreateWalletFn = WalletList[number]["wallets"][number];
+
+const unisatWalletFactory: CreateWalletFn = () => ({
+  id: "orangekit-unisat",
+  name: "OrangeKit Unisat",
+  iconUrl: "data:image/svg+xml,",
+  iconBackground: "#1E1E1E",
+  installed: !!(window as Window & { unisat?: object }).unisat,
+  downloadUrls: {
+    desktop: "https://example.com/unisat",
+  },
+  createConnector: () => (_config) =>
+    ({} as ReturnType<CreateConnectorFn>),
+});
+
+function createUnisatConnector(unisat: object | undefined) {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: unisat ? { unisat } : {},
+  });
+
+  try {
+    const wallet = withRainbowKitDetails(unisatWalletFactory)({
+      appName: "Fuse",
+      projectId: "test-project",
+    });
+    const walletDetails: WalletDetailsParams = {
+      rkDetails: {
+        ...wallet,
+        groupName: "Bitcoin",
+        index: 0,
+        groupIndex: 0,
+        isRainbowKitConnector: true,
+      },
+    };
+    const config = {} as Parameters<
+      ReturnType<typeof wallet.createConnector>
+    >[0];
+
+    return wallet.createConnector(walletDetails)(config);
+  } finally {
+    if (previousWindow) {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
+}
 
 describe("@fuse/web widget contract & constraint verification", () => {
   it("keeps BTC max spendable above the gas reserve", () => {
@@ -54,5 +107,25 @@ describe("@fuse/web widget contract & constraint verification", () => {
     const fee = calculateBuilderFee(10_000_000_000_000_000_000n, 15);
     expect(fee.feeAmount).toBe(15_000_000_000_000_000n);
     expect(decodeFuseError(new Error("RouterPaused()")).code).toBe("ROUTER_PAUSED");
+  });
+
+  it("preserves RainbowKit Bitcoin wallet details and installed state", () => {
+    const uninstalled = createUnisatConnector(undefined);
+    expect(uninstalled).toMatchObject({
+      rkDetails: {
+        installed: false,
+        groupName: "Bitcoin",
+        isRainbowKitConnector: true,
+      },
+    });
+
+    const installed = createUnisatConnector({});
+    expect(installed).toMatchObject({
+      rkDetails: {
+        installed: true,
+        groupName: "Bitcoin",
+        isRainbowKitConnector: true,
+      },
+    });
   });
 });

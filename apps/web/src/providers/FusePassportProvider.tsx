@@ -15,6 +15,7 @@ import {
 } from "@mezo-org/passport";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
+import { withRainbowKitDetails } from "../lib/passportWallets";
 import { FUSE_TOKENS } from "../styles/tokens";
 
 const WALLETCONNECT_PROJECT_ID =
@@ -24,7 +25,10 @@ const WALLETCONNECT_PROJECT_ID =
 const defaultPassportWallets = getDefaultWallets("testnet");
 
 const fuseWallets = [
-  defaultPassportWallets[0],
+  {
+    ...defaultPassportWallets[0],
+    wallets: defaultPassportWallets[0].wallets.map(withRainbowKitDetails),
+  },
   {
     groupName: "Ethereum",
     wallets: [
