@@ -12,8 +12,14 @@ import {
   isTaprootAddress,
   parseBuilderMetadataURI,
 } from "mezo-fuse";
+import { maxSpendable } from "../src/lib/gasReserve";
 
 describe("@fuse/web widget contract & constraint verification", () => {
+  it("keeps BTC max spendable above the gas reserve", () => {
+    expect(maxSpendable(100n, 101n)).toBe(0n);
+    expect(maxSpendable(500n, 100n)).toBe(400n);
+  });
+
   it("enforces DESIGN_SYSTEM.md and FRONTEND.md builder self-reported metadata constraint", () => {
     const meta = parseBuilderMetadataURI(
       "https://fuse.mezo.org/builders/demo-paid.json",

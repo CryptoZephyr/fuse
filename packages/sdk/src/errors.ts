@@ -5,7 +5,7 @@ import {
   type Hash,
   type Hex,
 } from "viem";
-import { fuseRouterAbi } from "./abis.js";
+import { fuseRouterAbi, tigrisRouterErrorsAbi } from "./abis.js";
 
 export class FuseTransactionRevertedError extends Error {
   readonly txHash: Hash;
@@ -18,6 +18,13 @@ export class FuseTransactionRevertedError extends Error {
     this.txHash = params.txHash;
     this.explorerUrl = params.explorerUrl;
     this.step = params.step;
+  }
+}
+
+export class FuseSimulationUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("Transaction simulation was unavailable.", { cause });
+    this.name = "FuseSimulationUnavailableError";
   }
 }
 
@@ -37,6 +44,7 @@ export type FuseErrorCode =
   | "TOKEN_NOT_ALLOWED"
   | "ZERO_AMOUNT"
   | "PERMIT_EXPIRED_OR_INVALID"
+  | "SIMULATION_UNAVAILABLE"
   | "REVERTED"
   | "UNKNOWN";
 
@@ -96,11 +104,47 @@ function extractErrorString(error: unknown): string {
   }
 }
 
+function extractRevertData(error: unknown): string | null {
+  const pending: unknown[] = [error];
+  const visited = new Set<object>();
+
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!current || typeof current !== "object" || visited.has(current)) continue;
+    visited.add(current);
+
+    const candidate = current as {
+      cause?: unknown;
+      data?: unknown;
+    };
+    if (
+      typeof candidate.data === "string" &&
+      /^0x[0-9a-fA-F]{8,}$/.test(candidate.data)
+    ) {
+      return candidate.data;
+    }
+    if (candidate.data && typeof candidate.data === "object") {
+      pending.push(candidate.data);
+    }
+    if (candidate.cause) pending.push(candidate.cause);
+  }
+
+  return null;
+}
+
 export function decodeFuseError(error: unknown): DecodedFuseError {
   if (error instanceof FuseTransactionRevertedError) {
     return {
       code: "REVERTED",
       message: error.message,
+      rawError: error,
+    };
+  }
+
+  if (error instanceof FuseSimulationUnavailableError) {
+    return {
+      code: "SIMULATION_UNAVAILABLE",
+      message: "We couldn't check this transaction before opening your wallet. Nothing was sent. Try again.",
       rawError: error,
     };
   }
@@ -148,17 +192,24 @@ export function decodeFuseError(error: unknown): DecodedFuseError {
   const msg = extractErrorString(error);
 
   // Attempt raw hex decoding if present on any Error or BaseError
-  const rawHexMatch = msg.match(/0x[0-9a-fA-F]{8,}/);
+  const rawData = extractRevertData(error);
+  const rawHexMatch = rawData ?? msg.match(/0x[0-9a-fA-F]{8,}/)?.[0];
   if (rawHexMatch) {
-    try {
-      const decoded = decodeErrorResult({
-        abi: fuseRouterAbi,
-        data: rawHexMatch[0] as Hex,
-      });
-      const mapped = mapContractErrorName(decoded.errorName, decoded.args ?? [], error);
-      if (mapped) return mapped;
-    } catch {
-      // Ignore if not a FuseRouter custom error
+    for (const abi of [fuseRouterAbi, tigrisRouterErrorsAbi]) {
+      try {
+        const decoded = decodeErrorResult({
+          abi,
+          data: rawHexMatch as Hex,
+        });
+        const mapped = mapContractErrorName(
+          decoded.errorName,
+          decoded.args ?? [],
+          error,
+        );
+        if (mapped) return mapped;
+      } catch {
+        // Ignore if this ABI does not contain the revert selector
+      }
     }
   }
 

@@ -30,9 +30,14 @@ const fuse = new FuseClient({ publicClient, walletClient });
 const result = await fuse.executeSave({
   builder: DEFAULT_PAID_BUILDER_TESTNET,
   amount: parseUnits("10", 18),
+  onTransactionSubmitted: ({ hash, kind, explorerUrl }) => {
+    console.log(kind, hash, explorerUrl);
+  },
 });
 console.log(result.explorerUrl);
 ```
+
+Use `onTransactionSubmitted` to receive approval and action hashes before confirmation.
 
 `FuseClient` also has `executeSwap`, `executeLock`, `approveBuilder`, `revokeBuilder`, quote functions and `getRoutedEvents`.
 

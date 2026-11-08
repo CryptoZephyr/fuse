@@ -10,6 +10,7 @@ import {
   MEZO_TESTNET_ADDRESSES,
   type MezoTokenSymbol,
   formatUsd,
+  getExplorerTxUrl,
   shortenAddress,
 } from "mezo-fuse";
 import { useFuseWidget } from "../hooks/useFuseWidget";
@@ -30,6 +31,8 @@ export interface FuseWidgetProps {
   builder?: string | null;
   /** Initial active tab (`swap` | `save` | `lock`) */
   defaultAction?: FuseActionType;
+  /** Initial transaction hash from the widget URL */
+  initialTx?: string | null;
 }
 
 function formatTokenAmount(wei: bigint, decimals = 18, maxFrac = 6): string {
@@ -60,8 +63,12 @@ function computeExchangeRate(
   });
 }
 
-function describeExecutionStep(step: ExecutionStep | null): string {
+function describeExecutionStep(
+  step: ExecutionStep | "refreshing_quote" | null,
+): string {
   switch (step) {
+    case "refreshing_quote":
+      return "Checking the latest quote...";
     case "checking_allowance":
       return "Step 1: Checking token allowance...";
     case "permit_signature_pending":
@@ -92,10 +99,15 @@ function describeExecutionStep(step: ExecutionStep | null): string {
  * - Single-line electrical wiring split schematic & dotted leader-line receipt
  * - Plain user-facing copy and 320px–440px responsive ticket frame
  */
-export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps) {
+export function FuseWidget({
+  builder,
+  defaultAction = "swap",
+  initialTx,
+}: FuseWidgetProps) {
   const state = useFuseWidget({
     builderAddress: builder,
     defaultAction,
+    initialTx,
   });
 
   const [keptCapNotice, setKeptCapNotice] = useState<boolean>(false);
@@ -137,6 +149,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     activeInputSymbol,
     activeInputBalance,
     activeInputBalanceFormatted,
+    maxSpendableInputBalance,
     isInsufficientBalance,
     parsedAmountWei,
     swapQuote,
@@ -145,6 +158,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     quoteLoading,
     quoteError,
     quoteUpdatedAt,
+    quoteAgeSeconds,
     approvalPending,
     revokePending,
     actionPending,
@@ -153,10 +167,17 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
     setErrorMessage,
     lastResult,
     lastApprovalTxUrl,
+    pendingTx,
+    initialTx: stateInitialTx,
     handleApproveBuilder,
     handleRevokeBuilder,
     handleExecuteAction,
   } = state;
+
+  const validInitialTx =
+    stateInitialTx && /^0x[0-9a-fA-F]{64}$/.test(stateInitialTx)
+      ? stateInitialTx
+      : null;
 
   const canSubmitAction =
     isConnected &&
@@ -691,6 +712,7 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
               >
                 <option value="MUSD">MUSD</option>
                 <option value="BTC">BTC</option>
+                <option value="MEZO">MEZO</option>
               </select>
             </div>
           </div>
@@ -712,7 +734,9 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   Balance: {activeInputBalanceFormatted} {swapTokenInSymbol}{" "}
                   <button
                     type="button"
-                    onClick={() => setSwapAmountInput(formatUnits(activeInputBalance, 18))}
+                    onClick={() =>
+                      setSwapAmountInput(formatUnits(maxSpendableInputBalance, 18))
+                    }
                     className="fuse-btn fuse-btn--quiet fuse-btn--sm"
                     style={{
                       minHeight: "20px",
@@ -723,6 +747,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   >
                     MAX
                   </button>
+                  {swapTokenInSymbol === "BTC" && (
+                    <span style={{ marginLeft: "4px" }}>
+                      Leaves a little BTC for network fees
+                    </span>
+                  )}
                 </span>
               )}
             </div>
@@ -791,6 +820,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
 
           {swapQuote && (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {quoteAgeSeconds !== null && (
+                <div className="fuse-mono" style={{ fontSize: "11px", color: "#4E535A" }}>
+                  Quoted {quoteAgeSeconds}s ago
+                </div>
+              )}
               {/* Outcome Headline Card */}
               <div
                 style={{
@@ -983,6 +1017,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
 
           {saveQuote && (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {quoteAgeSeconds !== null && (
+                <div className="fuse-mono" style={{ fontSize: "11px", color: "#4E535A" }}>
+                  Quoted {quoteAgeSeconds}s ago
+                </div>
+              )}
               {/* Outcome Headline Card */}
               <div
                 style={{
@@ -1120,7 +1159,9 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   Balance: {activeInputBalanceFormatted} BTC{" "}
                   <button
                     type="button"
-                    onClick={() => setLockAmountInput(formatUnits(activeInputBalance, 18))}
+                    onClick={() =>
+                      setLockAmountInput(formatUnits(maxSpendableInputBalance, 18))
+                    }
                     className="fuse-btn fuse-btn--quiet fuse-btn--sm"
                     style={{
                       minHeight: "20px",
@@ -1131,6 +1172,9 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
                   >
                     MAX
                   </button>
+                  <span style={{ marginLeft: "4px" }}>
+                    Leaves a little BTC for network fees
+                  </span>
                 </span>
               )}
             </div>
@@ -1188,6 +1232,11 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
 
           {lockQuote && (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "10px" }}>
+              {quoteAgeSeconds !== null && (
+                <div className="fuse-mono" style={{ fontSize: "11px", color: "#4E535A" }}>
+                  Quoted {quoteAgeSeconds}s ago
+                </div>
+              )}
               {/* Outcome Headline Card: Lead with real unlock date */}
               <div
                 style={{
@@ -1328,6 +1377,25 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
         className="fuse-widget-ticket__section"
         style={{ display: "flex", flexDirection: "column", gap: "8px" }}
       >
+        {validInitialTx && (
+          <div
+            data-fuse-state="last-transaction"
+            className="fuse-alert fuse-alert--attention"
+          >
+            <div className="fuse-alert__title">Your last transaction</div>
+            <div style={{ fontSize: "12px", display: "flex", gap: "10px" }}>
+              <Link href={`/receipt/${validInitialTx}`}>View receipt</Link>
+              <a
+                href={getExplorerTxUrl(validInitialTx)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Explorer ↗
+              </a>
+            </div>
+          </div>
+        )}
+
         {isInsufficientBalance && (
           <div
             role="alert"
@@ -1335,7 +1403,10 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
             className="fuse-alert fuse-alert--tripped"
           >
             <strong>Insufficient balance:</strong> Balance: {activeInputBalanceFormatted}{" "}
-            {activeInputSymbol} · Enter a smaller amount.
+            {activeInputSymbol}.{" "}
+            {activeInputSymbol === "BTC"
+              ? "Enter a smaller amount so you have BTC left for network fees."
+              : "Enter a smaller amount."}
           </div>
         )}
 
@@ -1362,6 +1433,19 @@ export function FuseWidget({ builder, defaultAction = "swap" }: FuseWidgetProps)
             <p style={{ fontSize: "12px", fontWeight: 700 }}>
               {describeExecutionStep(executionStep)}
             </p>
+            {pendingTx && (
+              <p style={{ fontSize: "12px" }}>
+                {pendingTx.kind === "token_approval" ? "Token approval" : "Action"}:{" "}
+                <a
+                  href={pendingTx.explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="fuse-mono"
+                >
+                  {shortenAddress(pendingTx.hash, 8)} (Explorer ↗)
+                </a>
+              </p>
+            )}
           </output>
         )}
 

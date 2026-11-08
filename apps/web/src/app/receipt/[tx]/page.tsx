@@ -81,8 +81,11 @@ export default function ReceiptPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function verifyReceipt() {
+    async function verifyReceipt(isRetry = false) {
+      if (cancelled) return;
+
       if (!isTransactionHash(rawTx)) {
         setVerification({
           state: "error",
@@ -91,10 +94,12 @@ export default function ReceiptPage() {
         return;
       }
 
-      setVerification({
-        state: "checking",
-        message: "Checking the transaction receipt on Mezo Testnet...",
-      });
+      if (!isRetry) {
+        setVerification({
+          state: "checking",
+          message: "Checking the transaction receipt on Mezo Testnet...",
+        });
+      }
 
       try {
         const receipt = await publicClient.getTransactionReceipt({ hash: rawTx });
@@ -145,8 +150,12 @@ export default function ReceiptPage() {
         if (!cancelled) {
           setVerification({
             state: "pending",
-            message: "The transaction is not mined yet. Refresh this page after confirmation.",
+            message:
+              "Waiting for Mezo Testnet to return this receipt. This page checks again automatically.",
           });
+          retryTimer = setTimeout(() => {
+            void verifyReceipt(true);
+          }, 4_000);
         }
       }
     }
@@ -154,6 +163,7 @@ export default function ReceiptPage() {
     void verifyReceipt();
     return () => {
       cancelled = true;
+      if (retryTimer !== null) clearTimeout(retryTimer);
     };
   }, [publicClient, rawTx]);
 

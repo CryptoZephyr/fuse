@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type Address,
   createPublicClient,
@@ -10,7 +10,7 @@ import {
   parseEventLogs,
   parseUnits,
 } from "viem";
-import { useConfig, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
+import { useConfig, useSwitchChain, useWalletClient } from "wagmi";
 import {
   useSubscribeToConnectedToUnsupportedBitcoinAddress,
   useWalletAccount,
@@ -33,17 +33,22 @@ import {
   fuseRouterAbi,
   type MezoTokenSymbol,
   type SaveQuote,
+  type SubmittedTransaction,
   type SwapQuote,
   decodeFuseError,
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
 } from "mezo-fuse";
-
-const QUOTE_MAX_AGE_MS = 60_000;
+import {
+  calculateBtcGasReserve,
+  maxSpendable,
+  MIN_BTC_GAS_RESERVE,
+} from "../lib/gasReserve";
 
 export interface UseFuseWidgetOptions {
   builderAddress?: string | null;
   defaultAction?: FuseActionType;
+  initialTx?: string | null;
 }
 
 export interface TokenBalances {
@@ -54,18 +59,17 @@ export interface TokenBalances {
 }
 
 export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
-  const fallbackPublicClient = useMemo(
+  const publicClient = useMemo(
     () =>
       createPublicClient({
         chain: MEZO_TESTNET_CHAIN,
         transport: http(MEZO_TESTNET_RPC_URL),
+        batch: { multicall: true },
       }),
     [],
   );
 
   const wagmiConfig = useConfig();
-  const wagmiPublicClient = usePublicClient({ chainId: MEZO_TESTNET_CHAIN_ID });
-  const publicClient = wagmiPublicClient ?? fallbackPublicClient;
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
 
@@ -143,6 +147,12 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
   );
   const [lockWarningAcknowledged, setLockWarningAcknowledged] =
     useState<boolean>(false);
+  const lockQuoteUnlockTimestamp = useRef<number | null>(null);
+  const quoteRequestId = useRef(0);
+
+  useEffect(() => {
+    setLockWarningAcknowledged(false);
+  }, [lockAmountInput, lockDurationSeconds]);
 
   // On-chain read states
   const [builderStatus, setBuilderStatus] = useState<BuilderStatus | null>(null);
@@ -154,6 +164,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     MEZO: 0n,
     sMUSD: 0n,
   });
+  const [btcGasReserve, setBtcGasReserve] = useState(MIN_BTC_GAS_RESERVE);
 
   // Quote states
   const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
@@ -162,11 +173,14 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
   const [quoteLoading, setQuoteLoading] = useState<boolean>(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteUpdatedAt, setQuoteUpdatedAt] = useState<number | null>(null);
+  const [quoteClock, setQuoteClock] = useState(Date.now());
 
   // Execution / approval states
   const [approvalPending, setApprovalPending] = useState<boolean>(false);
   const [revokePending, setRevokePending] = useState<boolean>(false);
-  const [executionStep, setExecutionStep] = useState<ExecutionStep | null>(null);
+  const [executionStep, setExecutionStep] = useState<
+    ExecutionStep | "refreshing_quote" | null
+  >(null);
   const [actionPending, setActionPending] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<ActionExecutionResult | null>(
@@ -175,6 +189,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
   const [lastApprovalTxUrl, setLastApprovalTxUrl] = useState<string | null>(
     null,
   );
+  const [pendingTx, setPendingTx] = useState<SubmittedTransaction | null>(null);
 
   const fuseClient = useMemo(
     () =>
@@ -192,35 +207,45 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     [connector?.id, connector?.type, networkFamily, publicClient, walletClient],
   );
 
-  // Refresh builder status, oracle price, and user token balances
+  // Refresh builder status, oracle price, token balances, and gas price
   const refreshOnChainState = useCallback(async () => {
+    const gasPriceRequest = publicClient
+      .getGasPrice()
+      .catch(() => null)
+      .then((gasPrice) => {
+        setBtcGasReserve(
+          gasPrice === null
+            ? MIN_BTC_GAS_RESERVE
+            : calculateBtcGasReserve(gasPrice),
+        );
+        return gasPrice;
+      });
     if (!isValidBuilderAddress) {
       setBuilderStatus(null);
       setBuilderLoading(false);
+      await gasPriceRequest;
       return;
     }
 
     try {
-      const [status, oraclePrice] = await Promise.all([
-        fuseClient.getBuilderStatus(builderAddress, accountAddress),
-        fuseClient.getBtcUsdPrice(),
-      ]);
+      const getBalance = (token: Address) =>
+        accountAddress
+          ? fuseClient.getTokenBalance(token, accountAddress)
+          : Promise.resolve(null);
+      const [status, oraclePrice, btcBal, musdBal, mezoBal, smusdBal] =
+        await Promise.all([
+          fuseClient.getBuilderStatus(builderAddress, accountAddress),
+          fuseClient.getBtcUsdPrice(),
+          getBalance(MEZO_TESTNET_ADDRESSES.btc),
+          getBalance(MEZO_TESTNET_ADDRESSES.musd),
+          getBalance(MEZO_TESTNET_ADDRESSES.mezoToken),
+          getBalance(MEZO_TESTNET_ADDRESSES.savingsVault),
+          gasPriceRequest,
+        ]);
       setBuilderStatus(status);
       setBtcUsdPrice(oraclePrice);
 
-      if (accountAddress) {
-        const [btcBal, musdBal, mezoBal, smusdBal] = await Promise.all([
-          fuseClient.getTokenBalance(MEZO_TESTNET_ADDRESSES.btc, accountAddress),
-          fuseClient.getTokenBalance(MEZO_TESTNET_ADDRESSES.musd, accountAddress),
-          fuseClient.getTokenBalance(
-            MEZO_TESTNET_ADDRESSES.mezoToken,
-            accountAddress,
-          ),
-          fuseClient.getTokenBalance(
-            MEZO_TESTNET_ADDRESSES.savingsVault,
-            accountAddress,
-          ),
-        ]);
+      if (btcBal !== null && musdBal !== null && mezoBal !== null && smusdBal !== null) {
         setBalances({
           BTC: btcBal,
           MUSD: musdBal,
@@ -234,7 +259,13 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     } finally {
       setBuilderLoading(false);
     }
-  }, [accountAddress, builderAddress, fuseClient, isValidBuilderAddress]);
+  }, [
+    accountAddress,
+    builderAddress,
+    fuseClient,
+    isValidBuilderAddress,
+    publicClient,
+  ]);
 
   useEffect(() => {
     setBuilderLoading(true);
@@ -264,93 +295,164 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     }
   }, [activeTab, lockAmountInput, saveAmountInput, swapAmountInput]);
 
-  // Quote calculation effect
-  useEffect(() => {
-    let cancelled = false;
+  const latestQuoteInputs = useRef({
+    activeTab,
+    builderAddress,
+    lockDurationSeconds,
+    parsedAmountWei,
+    slippageBps,
+    swapTokenInSymbol,
+    swapTokenOutSymbol,
+  });
+  latestQuoteInputs.current = {
+    activeTab,
+    builderAddress,
+    lockDurationSeconds,
+    parsedAmountWei,
+    slippageBps,
+    swapTokenInSymbol,
+    swapTokenOutSymbol,
+  };
 
-    async function fetchActiveQuote() {
-      setQuoteError(null);
-      setQuoteUpdatedAt(null);
-      if (!isValidBuilderAddress || parsedAmountWei <= 0n) {
+  const fetchCurrentQuote = useCallback(async () => {
+    const requestId = ++quoteRequestId.current;
+    setQuoteError(null);
+
+    try {
+      if (activeTab === "swap") {
+        const tokenIn = MEZO_TOKENS[swapTokenInSymbol].address;
+        const tokenOut = MEZO_TOKENS[swapTokenOutSymbol].address;
+        if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
+          throw new Error("Select two different tokens for Swap.");
+        }
+        const quote = await fuseClient.getSwapQuote({
+          builder: builderAddress,
+          tokenIn,
+          tokenOut,
+          amountIn: parsedAmountWei,
+          slippageBps,
+        });
+        if (requestId === quoteRequestId.current) {
+          setSwapQuote(quote);
+          setSaveQuote(null);
+          setLockQuote(null);
+          lockQuoteUnlockTimestamp.current = null;
+          setQuoteUpdatedAt(Date.now());
+        }
+        return quote;
+      }
+
+      if (activeTab === "save") {
+        const quote = await fuseClient.getSaveQuote({
+          builder: builderAddress,
+          amountIn: parsedAmountWei,
+        });
+        if (requestId === quoteRequestId.current) {
+          setSwapQuote(null);
+          setSaveQuote(quote);
+          setLockQuote(null);
+          lockQuoteUnlockTimestamp.current = null;
+          setQuoteUpdatedAt(Date.now());
+        }
+        return quote;
+      }
+
+      const quote = await fuseClient.getLockQuote({
+        builder: builderAddress,
+        amountIn: parsedAmountWei,
+        lockDurationSeconds,
+      });
+      if (requestId === quoteRequestId.current) {
+        if (
+          lockQuoteUnlockTimestamp.current !== null &&
+          lockQuoteUnlockTimestamp.current !== quote.unlockTimestamp
+        ) {
+          setLockWarningAcknowledged(false);
+        }
+        lockQuoteUnlockTimestamp.current = quote.unlockTimestamp;
+        setSwapQuote(null);
+        setSaveQuote(null);
+        setLockQuote(quote);
+        setQuoteUpdatedAt(Date.now());
+      }
+      return quote;
+    } catch (err) {
+      if (requestId === quoteRequestId.current) {
+        setQuoteError(decodeFuseError(err).message);
         setSwapQuote(null);
         setSaveQuote(null);
         setLockQuote(null);
-        setQuoteLoading(false);
-        return;
+        lockQuoteUnlockTimestamp.current = null;
+        setQuoteUpdatedAt(null);
       }
-
-      setQuoteLoading(true);
-      try {
-        if (activeTab === "swap") {
-          const tokenIn = MEZO_TOKENS[swapTokenInSymbol].address;
-          const tokenOut = MEZO_TOKENS[swapTokenOutSymbol].address;
-          if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
-            throw new Error("Select two different tokens for Swap.");
-          }
-          const q = await fuseClient.getSwapQuote({
-            builder: builderAddress,
-            tokenIn,
-            tokenOut,
-            amountIn: parsedAmountWei,
-            slippageBps,
-          });
-          if (!cancelled) {
-            setSwapQuote(q);
-            setQuoteUpdatedAt(Date.now());
-          }
-        } else if (activeTab === "save") {
-          const q = await fuseClient.getSaveQuote({
-            builder: builderAddress,
-            amountIn: parsedAmountWei,
-          });
-          if (!cancelled) {
-            setSaveQuote(q);
-            setQuoteUpdatedAt(Date.now());
-          }
-        } else if (activeTab === "lock") {
-          const q = await fuseClient.getLockQuote({
-            builder: builderAddress,
-            amountIn: parsedAmountWei,
-            lockDurationSeconds,
-          });
-          if (!cancelled) {
-            setLockQuote(q);
-            setQuoteUpdatedAt(Date.now());
-          }
-        }
-      } catch (err) {
-        if (!cancelled) {
-          const decoded = decodeFuseError(err);
-          setQuoteError(decoded.message);
-          setSwapQuote(null);
-          setSaveQuote(null);
-          setLockQuote(null);
-          setQuoteUpdatedAt(null);
-        }
-      } finally {
-        if (!cancelled) setQuoteLoading(false);
-      }
+      throw err;
     }
-
-    const timer = setTimeout(() => {
-      void fetchActiveQuote();
-    }, 200);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
   }, [
     activeTab,
     builderAddress,
     fuseClient,
-    isValidBuilderAddress,
     lockDurationSeconds,
     parsedAmountWei,
     slippageBps,
     swapTokenInSymbol,
     swapTokenOutSymbol,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setQuoteError(null);
+    setQuoteUpdatedAt(null);
+
+    if (!isValidBuilderAddress || parsedAmountWei <= 0n) {
+      setSwapQuote(null);
+      setSaveQuote(null);
+      setLockQuote(null);
+      lockQuoteUnlockTimestamp.current = null;
+      setQuoteLoading(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setQuoteLoading(true);
+      void fetchCurrentQuote()
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setQuoteLoading(false);
+        });
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      quoteRequestId.current += 1;
+      clearTimeout(timer);
+    };
+  }, [fetchCurrentQuote, isValidBuilderAddress, parsedAmountWei]);
+
+  const activeQuoteShown =
+    activeTab === "swap"
+      ? Boolean(swapQuote)
+      : activeTab === "save"
+        ? Boolean(saveQuote)
+        : Boolean(lockQuote);
+
+  useEffect(() => {
+    if (!activeQuoteShown || !quoteUpdatedAt) return;
+    setQuoteClock(Date.now());
+    const interval = setInterval(() => setQuoteClock(Date.now()), 1_000);
+    return () => clearInterval(interval);
+  }, [
+    activeQuoteShown,
+    activeTab,
+    lockQuote,
+    quoteUpdatedAt,
+    saveQuote,
+    swapQuote,
+  ]);
+
+  const quoteAgeSeconds =
+    activeQuoteShown && quoteUpdatedAt
+      ? Math.max(0, Math.floor((quoteClock - quoteUpdatedAt) / 1_000))
+      : null;
 
   // Active token balance and insufficient balance check
   const activeInputSymbol: MezoTokenSymbol =
@@ -361,6 +463,10 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
         : "BTC";
 
   const activeInputBalance = balances[activeInputSymbol] ?? 0n;
+  const maxSpendableInputBalance =
+    activeInputSymbol === "BTC"
+      ? maxSpendable(activeInputBalance, btcGasReserve)
+      : activeInputBalance;
   const activeInputBalanceFormatted = Number(
     formatUnits(activeInputBalance, 18),
   ).toFixed(6);
@@ -369,7 +475,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     Boolean(isConnected) &&
     Boolean(accountAddress) &&
     parsedAmountWei > 0n &&
-    parsedAmountWei > activeInputBalance;
+    parsedAmountWei > maxSpendableInputBalance;
 
   // Actions
   const handleSwitchToMezoTestnet = useCallback(async () => {
@@ -424,69 +530,103 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     setErrorMessage(null);
     setLastResult(null);
     setLastApprovalTxUrl(null);
+    setPendingTx(null);
     setActionPending(true);
     setExecutionStep("checking_allowance");
 
     try {
-      if (!quoteUpdatedAt || Date.now() - quoteUpdatedAt > QUOTE_MAX_AGE_MS) {
-        throw new Error("Your quote expired. Wait for a fresh quote before submitting.");
-      }
-
       const latestStatus = await fuseClient.getBuilderStatus(builderAddress, accountAddress);
       if (latestStatus.routerPaused) throw new Error("RouterPaused");
       if (!latestStatus.registered) throw new Error("BuilderNotRegistered");
       if (!latestStatus.active) throw new Error("BuilderNotActive");
-      if (latestStatus.needsApproval) throw new Error("BuilderNotApprovedByUser");
-      if (latestStatus.needsHigherApproval) throw new Error("FeeAboveUserApproval");
+
+      setExecutionStep("refreshing_quote");
+      setQuoteLoading(true);
+      let freshQuote: SwapQuote | SaveQuote | LockQuote;
+      try {
+        freshQuote = await fetchCurrentQuote();
+      } finally {
+        setQuoteLoading(false);
+      }
+      const latestInputs = latestQuoteInputs.current;
+      if (
+        latestInputs.activeTab !== activeTab ||
+        latestInputs.builderAddress !== builderAddress ||
+        latestInputs.lockDurationSeconds !== lockDurationSeconds ||
+        latestInputs.parsedAmountWei !== parsedAmountWei ||
+        latestInputs.slippageBps !== slippageBps ||
+        latestInputs.swapTokenInSymbol !== swapTokenInSymbol ||
+        latestInputs.swapTokenOutSymbol !== swapTokenOutSymbol
+      ) {
+        throw new Error("Your inputs changed. Check the quote and try again.");
+      }
+
+      const onTransactionSubmitted = (tx: SubmittedTransaction) => {
+        setPendingTx(tx);
+        if (tx.kind === "action" && typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          url.searchParams.set("tx", tx.hash);
+          window.history.replaceState(window.history.state, "", url.toString());
+        }
+      };
 
       let result: ActionExecutionResult;
       if (activeTab === "swap") {
-        const tokenIn = MEZO_TOKENS[swapTokenInSymbol].address;
-        const tokenOut = MEZO_TOKENS[swapTokenOutSymbol].address;
-        if (
-          !swapQuote ||
-          swapQuote.amountIn !== parsedAmountWei ||
-          swapQuote.feeBps !== latestStatus.feeBps ||
-          swapQuote.tokenIn.toLowerCase() !== tokenIn.toLowerCase() ||
-          swapQuote.tokenOut.toLowerCase() !== tokenOut.toLowerCase() ||
-          swapQuote.slippageBps !== slippageBps
-        ) {
-          throw new Error("Your swap quote is out of date. Wait for a fresh quote before submitting.");
+        const refreshedSwapQuote = freshQuote as SwapQuote;
+        if (!swapQuote) {
+          throw new Error("Your swap quote is no longer available. Check the new quote and try again.");
         }
+        if (refreshedSwapQuote.amountOutMin < swapQuote.amountOutMin) {
+          throw new Error("The price moved. Check the new amount and press Swap again.");
+        }
+        if (latestStatus.needsApproval) throw new Error("BuilderNotApprovedByUser");
+        if (latestStatus.needsHigherApproval) throw new Error("FeeAboveUserApproval");
         result = await fuseClient.executeSwap({
           builder: builderAddress,
           amountIn: parsedAmountWei,
-          amountOutMin: swapQuote.amountOutMin,
-          routes: swapQuote.routes,
+          amountOutMin: refreshedSwapQuote.amountOutMin,
+          routes: refreshedSwapQuote.routes,
           onStep: (step) => setExecutionStep(step),
+          onTransactionSubmitted,
         });
       } else if (activeTab === "save") {
-        if (
-          !saveQuote ||
-          saveQuote.amountIn !== parsedAmountWei ||
-          saveQuote.feeBps !== latestStatus.feeBps
-        ) {
-          throw new Error("Your save quote is out of date. Wait for a fresh quote before submitting.");
+        const refreshedSaveQuote = freshQuote as SaveQuote;
+        if (!saveQuote) {
+          throw new Error("Your save quote is no longer available. Check the new quote and try again.");
         }
+        if (refreshedSaveQuote.feeBps !== saveQuote.feeBps) {
+          throw new Error("The builder fee changed. Check the new fee and try again.");
+        }
+        if (latestStatus.needsApproval) throw new Error("BuilderNotApprovedByUser");
+        if (latestStatus.needsHigherApproval) throw new Error("FeeAboveUserApproval");
         result = await fuseClient.executeSave({
           builder: builderAddress,
           amount: parsedAmountWei,
           onStep: (step) => setExecutionStep(step),
+          onTransactionSubmitted,
         });
       } else {
-        if (
-          !lockQuote ||
-          lockQuote.amountIn !== parsedAmountWei ||
-          lockQuote.feeBps !== latestStatus.feeBps ||
-          lockQuote.lockDurationSeconds !== lockDurationSeconds
-        ) {
-          throw new Error("Your lock quote is out of date. Wait for a fresh quote before submitting.");
+        const refreshedLockQuote = freshQuote as LockQuote;
+        if (!lockQuote) {
+          throw new Error("Your lock quote is no longer available. Check the new quote and try again.");
         }
+        if (refreshedLockQuote.unlockTimestamp !== lockQuote.unlockTimestamp) {
+          setLockWarningAcknowledged(false);
+          throw new Error(
+            `The unlock date changed to ${refreshedLockQuote.unlockDateFormatted}. Check it and confirm again.`,
+          );
+        }
+        if (refreshedLockQuote.feeBps !== lockQuote.feeBps) {
+          throw new Error("The builder fee changed. Check the new fee and try again.");
+        }
+        if (latestStatus.needsApproval) throw new Error("BuilderNotApprovedByUser");
+        if (latestStatus.needsHigherApproval) throw new Error("FeeAboveUserApproval");
         result = await fuseClient.executeLock({
           builder: builderAddress,
           amount: parsedAmountWei,
           lockDurationSeconds,
           onStep: (step) => setExecutionStep(step),
+          onTransactionSubmitted,
         });
       }
 
@@ -514,10 +654,13 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
       }
 
       setLastResult(result);
+      setPendingTx(null);
       await refreshOnChainState();
     } catch (err) {
       setErrorMessage(decodeFuseError(err).message);
+      setPendingTx(null);
     } finally {
+      setQuoteLoading(false);
       setActionPending(false);
       setExecutionStep(null);
     }
@@ -525,17 +668,14 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     activeTab,
     accountAddress,
     builderAddress,
+    fetchCurrentQuote,
     fuseClient,
     lockQuote,
     lockDurationSeconds,
     parsedAmountWei,
-    quoteUpdatedAt,
     refreshOnChainState,
     saveQuote,
-    slippageBps,
     swapQuote,
-    swapTokenInSymbol,
-    swapTokenOutSymbol,
   ]);
 
   const handleFlipSwapPair = useCallback(() => {
@@ -589,6 +729,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     activeInputSymbol,
     activeInputBalance,
     activeInputBalanceFormatted,
+    maxSpendableInputBalance,
     isInsufficientBalance,
     parsedAmountWei,
     swapQuote,
@@ -597,6 +738,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     quoteLoading,
     quoteError,
     quoteUpdatedAt,
+    quoteAgeSeconds,
 
     // Approvals & Execution
     approvalPending,
@@ -607,6 +749,8 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     setErrorMessage,
     lastResult,
     lastApprovalTxUrl,
+    pendingTx,
+    initialTx: options.initialTx ?? null,
     handleApproveBuilder,
     handleRevokeBuilder,
     handleExecuteAction,

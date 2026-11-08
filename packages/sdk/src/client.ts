@@ -22,6 +22,7 @@ import {
 } from "./addresses.js";
 import { type BuilderStatus, getBuilderStatus } from "./builders.js";
 import {
+  FuseSimulationUnavailableError,
   FuseTransactionRevertedError,
   isUnsupportedMethodError,
 } from "./errors.js";
@@ -69,13 +70,20 @@ export interface ActionExecutionResult {
   usedPermit: boolean;
 }
 
+export interface SubmittedTransaction {
+  hash: Hash;
+  kind: "token_approval" | "action";
+  explorerUrl: string;
+}
+
 function isExecutionRevert(error: unknown): boolean {
   if (
     error instanceof BaseError &&
     error.walk(
       (cause) =>
         cause instanceof ExecutionRevertedError ||
-        cause instanceof ContractFunctionRevertedError,
+        cause instanceof ContractFunctionRevertedError ||
+        (cause instanceof BaseError && cause.name === "RawContractError"),
     )
   ) {
     return true;
@@ -376,6 +384,19 @@ export class FuseClient {
     fallbackGasLimit = 500_000n,
   ): Promise<Hash> {
     const { walletClient, account } = this.requireWallet();
+    try {
+      await this.publicClient.call({
+        account,
+        to: built.to,
+        data: built.data,
+        value: built.value,
+        batch: false,
+      });
+    } catch (error) {
+      if (isExecutionRevert(error)) throw error;
+      throw new FuseSimulationUnavailableError(error);
+    }
+
     let gas: bigint | undefined;
     try {
       const estimated = await this.publicClient.estimateGas({
@@ -400,6 +421,21 @@ export class FuseClient {
       value: built.value,
       gas,
     });
+  }
+
+  private async sendAndNotifyTransaction(
+    built: BuiltTransaction,
+    fallbackGasLimit: bigint,
+    kind: SubmittedTransaction["kind"],
+    onTransactionSubmitted?: (tx: SubmittedTransaction) => void,
+  ): Promise<Hash> {
+    const hash = await this.sendBuiltTransaction(built, fallbackGasLimit);
+    onTransactionSubmitted?.({
+      hash,
+      kind,
+      explorerUrl: getExplorerTxUrl(hash),
+    });
+    return hash;
   }
 
   private async waitForSuccessfulReceipt(
@@ -585,9 +621,16 @@ export class FuseClient {
     amount: bigint;
     mode?: MusdExecutionMode;
     onStep?: (step: ExecutionStep) => void;
+    onTransactionSubmitted?: (tx: SubmittedTransaction) => void;
   }): Promise<ActionExecutionResult> {
     const { walletClient, account, address } = this.requireWallet();
-    const { builder, amount, mode = "auto", onStep } = params;
+    const {
+      builder,
+      amount,
+      mode = "auto",
+      onStep,
+      onTransactionSubmitted,
+    } = params;
 
     onStep?.("checking_allowance");
     const currentAllowance = await this.getTokenAllowance(this.addresses.musd, address);
@@ -595,9 +638,11 @@ export class FuseClient {
     // 1. If existing MUSD allowance is already sufficient, call `save` directly in 1 step
     if (currentAllowance >= amount && mode !== "permit") {
       onStep?.("action_tx_pending");
-      const txHash = await this.sendBuiltTransaction(
+      const txHash = await this.sendAndNotifyTransaction(
         buildSaveTx({ builder, amount }, this.addresses),
         500_000n,
+        "action",
+        onTransactionSubmitted,
       );
       onStep?.("action_tx_confirming");
       const receipt = await this.waitForSuccessfulReceipt(txHash, "save");
@@ -627,9 +672,11 @@ export class FuseClient {
         });
 
         onStep?.("action_tx_pending");
-        const txHash = await this.sendBuiltTransaction(
+        const txHash = await this.sendAndNotifyTransaction(
           buildSaveWithPermitTx({ builder, amount, permit }, this.addresses),
           550_000n,
+          "action",
+          onTransactionSubmitted,
         );
         onStep?.("action_tx_confirming");
         const receipt = await this.waitForSuccessfulReceipt(txHash, "save");
@@ -655,22 +702,26 @@ export class FuseClient {
     let approvalTxHash: Hash | undefined;
     if (currentAllowance < amount) {
       onStep?.("token_approval_pending");
-      approvalTxHash = await this.sendBuiltTransaction(
+      approvalTxHash = await this.sendAndNotifyTransaction(
         buildErc20ApproveTx({
           token: this.addresses.musd,
           spender: this.addresses.fuseRouter,
           amount,
         }),
         200_000n,
+        "token_approval",
+        onTransactionSubmitted,
       );
       onStep?.("token_approval_confirming");
       await this.waitForSuccessfulReceipt(approvalTxHash, "save token approval");
     }
 
     onStep?.("action_tx_pending");
-    const txHash = await this.sendBuiltTransaction(
+    const txHash = await this.sendAndNotifyTransaction(
       buildSaveTx({ builder, amount }, this.addresses),
       500_000n,
+      "action",
+      onTransactionSubmitted,
     );
     onStep?.("action_tx_confirming");
     const receipt = await this.waitForSuccessfulReceipt(txHash, "save");
@@ -694,6 +745,7 @@ export class FuseClient {
     deadlineSeconds?: number;
     mode?: MusdExecutionMode;
     onStep?: (step: ExecutionStep) => void;
+    onTransactionSubmitted?: (tx: SubmittedTransaction) => void;
   }): Promise<ActionExecutionResult> {
     const { walletClient, account, address } = this.requireWallet();
     const {
@@ -703,6 +755,7 @@ export class FuseClient {
       deadlineSeconds = 1800,
       mode = "auto",
       onStep,
+      onTransactionSubmitted,
     } = params;
 
     const routes =
@@ -724,9 +777,11 @@ export class FuseClient {
     // 1. If existing allowance is already sufficient, call `swap` directly in 1 step
     if (currentAllowance >= amountIn && !(isMusdInput && mode === "permit")) {
       onStep?.("action_tx_pending");
-      const txHash = await this.sendBuiltTransaction(
+      const txHash = await this.sendAndNotifyTransaction(
         buildSwapTx({ builder, amountIn, amountOutMin, routes, deadline }, this.addresses),
         600_000n,
+        "action",
+        onTransactionSubmitted,
       );
       onStep?.("action_tx_confirming");
       const receipt = await this.waitForSuccessfulReceipt(txHash, "swap");
@@ -756,12 +811,14 @@ export class FuseClient {
         });
 
         onStep?.("action_tx_pending");
-        const txHash = await this.sendBuiltTransaction(
+        const txHash = await this.sendAndNotifyTransaction(
           buildSwapWithPermitTx(
             { builder, amountIn, amountOutMin, routes, deadline, permit },
             this.addresses,
           ),
           650_000n,
+          "action",
+          onTransactionSubmitted,
         );
         onStep?.("action_tx_confirming");
         const receipt = await this.waitForSuccessfulReceipt(txHash, "swap");
@@ -785,22 +842,26 @@ export class FuseClient {
     let approvalTxHash: Hash | undefined;
     if (currentAllowance < amountIn) {
       onStep?.("token_approval_pending");
-      approvalTxHash = await this.sendBuiltTransaction(
+      approvalTxHash = await this.sendAndNotifyTransaction(
         buildErc20ApproveTx({
           token: tokenIn,
           spender: this.addresses.fuseRouter,
           amount: amountIn,
         }),
         200_000n,
+        "token_approval",
+        onTransactionSubmitted,
       );
       onStep?.("token_approval_confirming");
       await this.waitForSuccessfulReceipt(approvalTxHash, "swap token approval");
     }
 
     onStep?.("action_tx_pending");
-    const txHash = await this.sendBuiltTransaction(
+    const txHash = await this.sendAndNotifyTransaction(
       buildSwapTx({ builder, amountIn, amountOutMin, routes, deadline }, this.addresses),
       600_000n,
+      "action",
+      onTransactionSubmitted,
     );
     onStep?.("action_tx_confirming");
     const receipt = await this.waitForSuccessfulReceipt(txHash, "swap");
@@ -819,9 +880,16 @@ export class FuseClient {
     amount: bigint;
     lockDurationSeconds: number;
     onStep?: (step: ExecutionStep) => void;
+    onTransactionSubmitted?: (tx: SubmittedTransaction) => void;
   }): Promise<ActionExecutionResult> {
     const { address } = this.requireWallet();
-    const { builder, amount, lockDurationSeconds, onStep } = params;
+    const {
+      builder,
+      amount,
+      lockDurationSeconds,
+      onStep,
+      onTransactionSubmitted,
+    } = params;
 
     const maxLockDurationSeconds = Number(
       await this.publicClient.readContract({
@@ -846,22 +914,26 @@ export class FuseClient {
     let approvalTxHash: Hash | undefined;
     if (currentAllowance < amount) {
       onStep?.("token_approval_pending");
-      approvalTxHash = await this.sendBuiltTransaction(
+      approvalTxHash = await this.sendAndNotifyTransaction(
         buildErc20ApproveTx({
           token: this.addresses.btc,
           spender: this.addresses.fuseRouter,
           amount,
         }),
         200_000n,
+        "token_approval",
+        onTransactionSubmitted,
       );
       onStep?.("token_approval_confirming");
       await this.waitForSuccessfulReceipt(approvalTxHash, "lock token approval");
     }
 
     onStep?.("action_tx_pending");
-    const txHash = await this.sendBuiltTransaction(
+    const txHash = await this.sendAndNotifyTransaction(
       buildLockTx({ builder, amount, lockDurationSeconds }, this.addresses),
       750_000n,
+      "action",
+      onTransactionSubmitted,
     );
     onStep?.("action_tx_confirming");
     const receipt = await this.waitForSuccessfulReceipt(txHash, "lock");
