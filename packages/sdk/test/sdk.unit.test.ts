@@ -1,17 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
-import { encodeErrorResult, getAddress, parseUnits, type Address } from "viem";
+import {
+  CallExecutionError,
+  encodeErrorResult,
+  ExecutionRevertedError,
+  getAddress,
+  parseUnits,
+  RawContractError,
+  type Address,
+} from "viem";
 import {
   DEFAULT_PAID_BUILDER_TESTNET,
   DEFAULT_ZERO_FEE_BUILDER_TESTNET,
   FUSE_TEST_WALLETS,
   FuseClient,
+  FuseSimulationUnavailableError,
   FuseTransactionRevertedError,
   LEGACY_PAID_BUILDER_TESTNET,
   LOCK_DURATION_PRESETS,
   MEZO_TESTNET_ADDRESSES,
+  MEZO_TESTNET_CHAIN,
   MIN_LOCK_DURATION_SECONDS,
   TESTNET_MAX_LOCK_DURATION_SECONDS,
   buildApproveBuilderTx,
+  buildDefaultTigrisRoute,
   buildLockTx,
   buildRevokeBuilderTx,
   buildSaveTx,
@@ -77,6 +88,32 @@ describe("mezo-fuse unit tests", () => {
     expect(() => calculateBuilderFee(amount, 51)).toThrow(/exceeds protocol cap/);
     expect(formatFeeBps(15)).toBe("0.15%");
     expect(formatFeeBps(0)).toBe("0.00%");
+  });
+
+  it("uses the Mezo Multicall3 deployment", () => {
+    expect(MEZO_TESTNET_CHAIN.contracts?.multicall3?.address).toBe(
+      "0xcA11bde05977b3631167028862bE2a173976CA11",
+    );
+    expect(MEZO_TESTNET_CHAIN.contracts?.multicall3?.blockCreated).toBe(3328573);
+  });
+
+  it("builds direct and two-hop routes for Mezo testnet token pairs", () => {
+    const { btc, mezoToken, musd, poolFactory } = MEZO_TESTNET_ADDRESSES;
+
+    expect(buildDefaultTigrisRoute(btc, musd)).toEqual([
+      { from: btc, to: musd, stable: false, factory: poolFactory },
+    ]);
+    expect(buildDefaultTigrisRoute(musd, mezoToken)).toEqual([
+      { from: musd, to: mezoToken, stable: false, factory: poolFactory },
+    ]);
+    expect(buildDefaultTigrisRoute(mezoToken, btc)).toEqual([
+      { from: mezoToken, to: musd, stable: false, factory: poolFactory },
+      { from: musd, to: btc, stable: false, factory: poolFactory },
+    ]);
+    expect(buildDefaultTigrisRoute(btc, mezoToken)).toEqual([
+      { from: btc, to: musd, stable: false, factory: poolFactory },
+      { from: musd, to: mezoToken, stable: false, factory: poolFactory },
+    ]);
   });
 
   it("preflights routed quotes against router state and vault share previews", async () => {
@@ -329,6 +366,7 @@ describe("mezo-fuse unit tests", () => {
     const client = new FuseClient({
       publicClient: {
         readContract,
+        call: vi.fn().mockResolvedValue({ data: "0x" }),
         estimateGas: vi.fn().mockResolvedValue(100_000n),
         waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
       } as any,
@@ -363,6 +401,7 @@ describe("mezo-fuse unit tests", () => {
         if (functionName === "nonces") return 0n;
         return 0n;
       }),
+      call: vi.fn().mockResolvedValue({ data: "0x" }),
       estimateGas: vi.fn().mockResolvedValue(200_000n),
       waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
     } as any;
@@ -407,6 +446,7 @@ describe("mezo-fuse unit tests", () => {
     const steps: string[] = [];
     const mockPublicClient = {
       readContract: vi.fn().mockResolvedValue(parseUnits("10", 18)),
+      call: vi.fn().mockResolvedValue({ data: "0x" }),
       estimateGas: vi.fn().mockResolvedValue(200_000n),
       waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "reverted" }),
     } as any;
@@ -445,6 +485,7 @@ describe("mezo-fuse unit tests", () => {
     const txHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const lowEstimatePublicClient = {
       readContract: vi.fn().mockResolvedValue(parseUnits("10", 18)),
+      call: vi.fn().mockResolvedValue({ data: "0x" }),
       estimateGas: vi.fn().mockResolvedValue(100_000n),
       waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
     } as any;
@@ -473,6 +514,7 @@ describe("mezo-fuse unit tests", () => {
 
     const highEstimateClient = new FuseClient({
       publicClient: {
+        call: vi.fn().mockResolvedValue({ data: "0x" }),
         estimateGas: vi.fn().mockResolvedValue(1_000_000n),
         waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
       } as any,
@@ -488,6 +530,7 @@ describe("mezo-fuse unit tests", () => {
   it("does not submit a transaction when gas estimation reports an execution revert", async () => {
     const revert = new Error("execution reverted: BuilderNotRegistered");
     const mockPublicClient = {
+      call: vi.fn().mockResolvedValue({ data: "0x" }),
       estimateGas: vi.fn().mockRejectedValue(revert),
       waitForTransactionReceipt: vi.fn(),
     } as any;
@@ -509,6 +552,175 @@ describe("mezo-fuse unit tests", () => {
       }),
     ).rejects.toBe(revert);
     expect(sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("simulates before estimating gas and decodes router errors from viem call failures", async () => {
+    const account = "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0";
+    const revertData = encodeErrorResult({
+      abi: fuseRouterAbi,
+      errorName: "BuilderNotRegistered",
+    });
+    const callArguments = {
+      account,
+      to: MEZO_TESTNET_ADDRESSES.fuseRouter,
+      data: "0x1234" as const,
+    };
+    const rawContractRevert = new CallExecutionError(
+      new RawContractError({ data: revertData }),
+      callArguments,
+    );
+    const rpcRevert = new CallExecutionError(
+      new ExecutionRevertedError({
+        cause: Object.assign(new Error("execution reverted"), {
+          data: revertData,
+        }),
+        message: "execution reverted",
+      }),
+      callArguments,
+    );
+
+    for (const revert of [rawContractRevert, rpcRevert]) {
+      const sendTransaction = vi.fn();
+      const estimateGas = vi.fn();
+      const client = new FuseClient({
+        publicClient: {
+          call: vi.fn().mockRejectedValue(revert),
+          estimateGas,
+        } as any,
+        walletClient: {
+          account: { address: account },
+          sendTransaction,
+        } as any,
+        addresses: MEZO_TESTNET_ADDRESSES,
+      });
+
+      await expect(
+        client.approveBuilder({
+          builder: DEFAULT_PAID_BUILDER_TESTNET,
+          maxFeeBps: 15,
+        }),
+      ).rejects.toBe(revert);
+      expect(sendTransaction).not.toHaveBeenCalled();
+      expect(estimateGas).not.toHaveBeenCalled();
+      expect(decodeFuseError(revert).code).toBe("BUILDER_NOT_REGISTERED");
+    }
+  });
+
+  it("does not send when transaction simulation is unavailable", async () => {
+    const sendTransaction = vi.fn();
+    const estimateGas = vi.fn();
+    const client = new FuseClient({
+      publicClient: {
+        call: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
+        estimateGas,
+      } as any,
+      walletClient: {
+        account: {
+          address: "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0",
+        },
+        sendTransaction,
+      } as any,
+      addresses: MEZO_TESTNET_ADDRESSES,
+    });
+
+    const result = await client
+      .approveBuilder({
+        builder: DEFAULT_PAID_BUILDER_TESTNET,
+        maxFeeBps: 15,
+      })
+      .catch(decodeFuseError);
+
+    expect(result).toMatchObject({
+      code: "SIMULATION_UNAVAILABLE",
+      message:
+        "We couldn't check this transaction before opening your wallet. Nothing was sent. Try again.",
+    });
+    expect(result.rawError).toBeInstanceOf(FuseSimulationUnavailableError);
+    expect(sendTransaction).not.toHaveBeenCalled();
+    expect(estimateGas).not.toHaveBeenCalled();
+  });
+
+  it("uses fallback gas when simulation succeeds but gas estimation fails", async () => {
+    const sendTransaction = vi.fn().mockResolvedValue(`0x${"a".repeat(64)}`);
+    const client = new FuseClient({
+      publicClient: {
+        call: vi.fn().mockResolvedValue({ data: "0x" }),
+        estimateGas: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
+        waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
+      } as any,
+      walletClient: {
+        account: "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0",
+        sendTransaction,
+      } as any,
+      addresses: MEZO_TESTNET_ADDRESSES,
+    });
+
+    await client.approveBuilder({
+      builder: DEFAULT_PAID_BUILDER_TESTNET,
+      maxFeeBps: 15,
+    });
+
+    expect(sendTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ gas: 200_000n }),
+    );
+  });
+
+  it("reports approval and action transaction hashes before waiting for receipts", async () => {
+    const approvalHash = `0x${"a".repeat(64)}` as const;
+    const actionHash = `0x${"b".repeat(64)}` as const;
+    const submitted: Array<{
+      hash: string;
+      kind: string;
+      explorerUrl: string;
+    }> = [];
+    const submissionKindsAtReceiptWait: string[][] = [];
+    let sendCount = 0;
+    const client = new FuseClient({
+      publicClient: {
+        readContract: vi.fn().mockResolvedValue(0n),
+        call: vi.fn().mockResolvedValue({ data: "0x" }),
+        estimateGas: vi.fn().mockResolvedValue(200_000n),
+        waitForTransactionReceipt: vi.fn(async () => {
+          submissionKindsAtReceiptWait.push(submitted.map(({ kind }) => kind));
+          return { status: "success" };
+        }),
+      } as any,
+      walletClient: {
+        account: {
+          address: "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0",
+        },
+        sendTransaction: vi.fn(async () => {
+          sendCount += 1;
+          return sendCount === 1 ? approvalHash : actionHash;
+        }),
+      } as any,
+      addresses: MEZO_TESTNET_ADDRESSES,
+    });
+
+    await client.executeSave({
+      builder: DEFAULT_PAID_BUILDER_TESTNET,
+      amount: parseUnits("1", 18),
+      mode: "approve",
+      onTransactionSubmitted: ({ hash, kind, explorerUrl }) =>
+        submitted.push({ hash, kind, explorerUrl }),
+    });
+
+    expect(submitted).toEqual([
+      {
+        hash: approvalHash,
+        kind: "token_approval",
+        explorerUrl: `https://explorer.test.mezo.org/tx/${approvalHash}`,
+      },
+      {
+        hash: actionHash,
+        kind: "action",
+        explorerUrl: `https://explorer.test.mezo.org/tx/${actionHash}`,
+      },
+    ]);
+    expect(submissionKindsAtReceiptWait).toEqual([
+      ["token_approval"],
+      ["token_approval", "action"],
+    ]);
   });
 
   it("excludes leaderboard self-referrals and flags Fuse test wallets", async () => {

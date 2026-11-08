@@ -154,15 +154,37 @@ export function buildDefaultTigrisRoute(
   const normalizedOut = tokenOut.toLowerCase();
   const btcAddr = MEZO_TESTNET_ADDRESSES.btc.toLowerCase();
   const musdAddr = MEZO_TESTNET_ADDRESSES.musd.toLowerCase();
+  const mezoAddr = MEZO_TESTNET_ADDRESSES.mezoToken.toLowerCase();
 
-  // Direct pool for BTC <-> MUSD
   if (
     (normalizedIn === btcAddr && normalizedOut === musdAddr) ||
-    (normalizedIn === musdAddr && normalizedOut === btcAddr)
+    (normalizedIn === musdAddr && normalizedOut === btcAddr) ||
+    (normalizedIn === musdAddr && normalizedOut === mezoAddr) ||
+    (normalizedIn === mezoAddr && normalizedOut === musdAddr)
   ) {
     return [
       {
         from: tokenIn,
+        to: tokenOut,
+        stable,
+        factory: poolFactory,
+      },
+    ];
+  }
+
+  if (
+    (normalizedIn === btcAddr && normalizedOut === mezoAddr) ||
+    (normalizedIn === mezoAddr && normalizedOut === btcAddr)
+  ) {
+    return [
+      {
+        from: tokenIn,
+        to: MEZO_TESTNET_ADDRESSES.musd,
+        stable,
+        factory: poolFactory,
+      },
+      {
+        from: MEZO_TESTNET_ADDRESSES.musd,
         to: tokenOut,
         stable,
         factory: poolFactory,
