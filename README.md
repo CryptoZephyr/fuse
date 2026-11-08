@@ -198,6 +198,24 @@ Serve `apps/web` and point an iframe at its `/widget` route:
 
 `builder` is your builder address. `action` is `swap`, `save` or `lock`. Without a `builder` the widget uses the demo paid builder, so always set it.
 
+#### Host events
+
+The widget sends `account`, `tx_submitted`, `tx_confirmed`, and `resize` messages to its parent page. Check that `event.origin` matches the widget origin and `event.source` matches the iframe's `contentWindow` before using message data.
+
+```ts
+import { parseFuseWidgetMessage } from "mezo-fuse";
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== widgetOrigin || event.source !== iframe.contentWindow) return;
+  const message = parseFuseWidgetMessage(event.data);
+  if (!message) return;
+
+  if (message.type === "tx_confirmed") {
+    console.log(message.action, message.hash);
+  }
+});
+```
+
 ### Use the SDK
 
 Install it with `npm install mezo-fuse@^0.1.1 viem`. The package is on npm as [`mezo-fuse`](https://www.npmjs.com/package/mezo-fuse).

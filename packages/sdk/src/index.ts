@@ -9,3 +9,4 @@ export * from "./events.js";
 export * from "./leaderboard.js";
 export * from "./x402.js";
 export * from "./client.js";
+export * from "./widgetMessages.js";

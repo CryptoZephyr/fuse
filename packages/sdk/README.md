@@ -39,6 +39,24 @@ console.log(result.explorerUrl);
 
 Use `onTransactionSubmitted` to receive approval and action hashes before confirmation.
 
+## Host events
+
+The widget posts `account`, `tx_submitted`, `tx_confirmed`, and `resize` messages to its parent window. Check that `event.origin` matches the widget origin and `event.source` matches the iframe's `contentWindow` before parsing message data.
+
+```ts
+import { parseFuseWidgetMessage } from "mezo-fuse";
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== widgetOrigin || event.source !== iframe.contentWindow) return;
+  const message = parseFuseWidgetMessage(event.data);
+  if (!message) return;
+
+  if (message.type === "tx_confirmed") {
+    console.log(message.action, message.hash);
+  }
+});
+```
+
 `FuseClient` also has `executeSwap`, `executeLock`, `approveBuilder`, `revokeBuilder`, quote functions and `getRoutedEvents`.
 
 MUSD swaps and saves use a single EIP-2612 permit transaction where the wallet supports it. Bitcoin wallets that use Mezo Passport smart accounts can't sign typed data, so the SDK falls back to approve, then save or swap.

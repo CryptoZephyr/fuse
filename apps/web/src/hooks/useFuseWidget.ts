@@ -22,6 +22,7 @@ import {
   DEFAULT_PAID_BUILDER_TESTNET,
   type ExecutionStep,
   type FuseActionType,
+  FUSE_WIDGET_MESSAGE_SOURCE,
   FuseClient,
   LOCK_DURATION_PRESETS,
   type LockQuote,
@@ -44,6 +45,7 @@ import {
   maxSpendable,
   MIN_BTC_GAS_RESERVE,
 } from "../lib/gasReserve";
+import { postToHost } from "../lib/hostMessages";
 
 export interface UseFuseWidgetOptions {
   builderAddress?: string | null;
@@ -81,6 +83,17 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     connector,
     chainId,
   } = useWalletAccount();
+
+  useEffect(() => {
+    const address = isConnected && accountAddress ? accountAddress : null;
+    postToHost({
+      source: FUSE_WIDGET_MESSAGE_SOURCE,
+      version: 1,
+      type: "account",
+      address,
+      chainId: address && typeof chainId === "number" ? chainId : null,
+    });
+  }, [accountAddress, chainId, isConnected]);
 
   const [taprootUnsupportedTriggered, setTaprootUnsupportedTriggered] = useState(false);
 
@@ -563,6 +576,15 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
 
       const onTransactionSubmitted = (tx: SubmittedTransaction) => {
         setPendingTx(tx);
+        postToHost({
+          source: FUSE_WIDGET_MESSAGE_SOURCE,
+          version: 1,
+          type: "tx_submitted",
+          hash: tx.hash,
+          kind: tx.kind,
+          action: activeTab,
+          explorerUrl: tx.explorerUrl,
+        });
         if (tx.kind === "action" && typeof window !== "undefined") {
           const url = new URL(window.location.href);
           url.searchParams.set("tx", tx.hash);
@@ -653,6 +675,15 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
         );
       }
 
+      postToHost({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type: "tx_confirmed",
+        hash: result.txHash,
+        kind: "action",
+        action: activeTab,
+        explorerUrl: result.explorerUrl,
+      });
       setLastResult(result);
       setPendingTx(null);
       await refreshOnChainState();

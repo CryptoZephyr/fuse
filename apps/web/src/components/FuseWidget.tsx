@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatUnits } from "viem";
 import {
   type ExecutionStep,
+  FUSE_WIDGET_MESSAGE_SOURCE,
   type FuseActionType,
   LOCK_DURATION_PRESETS,
   MEZO_TESTNET_ADDRESSES,
@@ -14,6 +15,7 @@ import {
   shortenAddress,
 } from "mezo-fuse";
 import { useFuseWidget } from "../hooks/useFuseWidget";
+import { postToHost } from "../lib/hostMessages";
 import { FuseLogoMark } from "./FuseLogo";
 import {
   BuilderRatingPlate,
@@ -111,6 +113,55 @@ export function FuseWidget({
   });
 
   const [keptCapNotice, setKeptCapNotice] = useState<boolean>(false);
+
+  useEffect(() => {
+    const documentRoot = document.documentElement;
+    const documentBody = document.body;
+    if (!documentRoot || !documentBody || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    let animationFrame = 0;
+    let pendingHeight: number | null = null;
+    let lastSentHeight: number | null = null;
+    const observer = new ResizeObserver(() => {
+      const height = Math.max(
+        documentRoot.scrollHeight,
+        documentBody.scrollHeight,
+      );
+      if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) {
+        return;
+      }
+
+      pendingHeight = height;
+      if (animationFrame !== 0) return;
+
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0;
+        if (
+          pendingHeight === null ||
+          (lastSentHeight !== null && Math.abs(pendingHeight - lastSentHeight) < 1)
+        ) {
+          return;
+        }
+
+        lastSentHeight = pendingHeight;
+        postToHost({
+          source: FUSE_WIDGET_MESSAGE_SOURCE,
+          version: 1,
+          type: "resize",
+          height: Math.ceil(pendingHeight),
+        });
+      });
+    });
+
+    observer.observe(documentRoot);
+    observer.observe(documentBody);
+    return () => {
+      observer.disconnect();
+      if (animationFrame !== 0) window.cancelAnimationFrame(animationFrame);
+    };
+  }, []);
 
   const {
     accountAddress,

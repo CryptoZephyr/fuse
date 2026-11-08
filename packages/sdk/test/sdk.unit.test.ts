@@ -45,6 +45,8 @@ import {
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
   parseBuilderMetadataURI,
+  FUSE_WIDGET_MESSAGE_SOURCE,
+  parseFuseWidgetMessage,
   previewVeBtcUnlockTime,
   RETIRED_PAID_BUILDER_TESTNET,
   RETIRED_ZERO_FEE_BUILDER_TESTNET,
@@ -58,6 +60,116 @@ import {
 } from "../src/index.js";
 
 describe("mezo-fuse unit tests", () => {
+  it("parses account host messages", () => {
+    expect(
+      parseFuseWidgetMessage({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type: "account",
+        address: "0x0000000000000000000000000000000000000001",
+        chainId: 31611,
+      }),
+    ).toEqual({
+      source: FUSE_WIDGET_MESSAGE_SOURCE,
+      version: 1,
+      type: "account",
+      address: "0x0000000000000000000000000000000000000001",
+      chainId: 31611,
+    });
+  });
+
+  it.each(["tx_submitted", "tx_confirmed"] as const)(
+    "parses %s host messages",
+    (type) => {
+      expect(
+        parseFuseWidgetMessage({
+          source: FUSE_WIDGET_MESSAGE_SOURCE,
+          version: 1,
+          type,
+          hash: `0x${"a".repeat(64)}`,
+          kind: "action",
+          action: "save",
+          explorerUrl: "https://explorer.test.mezo.org/tx/0xabc",
+        }),
+      ).toEqual({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type,
+        hash: `0x${"a".repeat(64)}`,
+        kind: "action",
+        action: "save",
+        explorerUrl: "https://explorer.test.mezo.org/tx/0xabc",
+      });
+    },
+  );
+
+  it("parses resize host messages", () => {
+    expect(
+      parseFuseWidgetMessage({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type: "resize",
+        height: 720,
+      }),
+    ).toEqual({
+      source: FUSE_WIDGET_MESSAGE_SOURCE,
+      version: 1,
+      type: "resize",
+      height: 720,
+    });
+  });
+
+  it("rejects malformed host messages", () => {
+    const validAccount = {
+      source: FUSE_WIDGET_MESSAGE_SOURCE,
+      version: 1,
+      type: "account",
+      address: "0x0000000000000000000000000000000000000001",
+      chainId: 31611,
+    };
+
+    expect(parseFuseWidgetMessage(null)).toBeNull();
+    expect(parseFuseWidgetMessage("not an object")).toBeNull();
+    expect(
+      parseFuseWidgetMessage({ ...validAccount, source: "other-widget" }),
+    ).toBeNull();
+    expect(parseFuseWidgetMessage({ ...validAccount, version: 2 })).toBeNull();
+    expect(
+      parseFuseWidgetMessage({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type: "tx_submitted",
+        hash: "0x1234",
+        kind: "action",
+        action: "swap",
+        explorerUrl: "https://explorer.test.mezo.org/tx/0x1234",
+      }),
+    ).toBeNull();
+    expect(
+      parseFuseWidgetMessage({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type: "tx_submitted",
+        hash: `0x${"a".repeat(64)}`,
+        kind: "action",
+        action: "swap",
+        explorerUrl: "javascript:alert(1)",
+      }),
+    ).toBeNull();
+    expect(
+      parseFuseWidgetMessage({ ...validAccount, address: "0x1234" }),
+    ).toBeNull();
+    expect(
+      parseFuseWidgetMessage({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type: "resize",
+        height: -1,
+      }),
+    ).toBeNull();
+    expect(parseFuseWidgetMessage({ ...validAccount, extra: true })).toBeNull();
+  });
+
   it("uses the replacement demo builders and retains retired wallets for history", () => {
     expect(DEFAULT_PAID_BUILDER_TESTNET).toBe(
       "0xd4b987B2e9F5D1a2ca98A24a8A802eA6068Fc283",
