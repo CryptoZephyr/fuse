@@ -2,6 +2,14 @@
 
 **Earn a fee every time your users swap, save or lock on Mezo, capped by them.**
 
+## The problem
+
+Mezo has working products, like Tigris swaps, the MUSD Savings Vault and veBTC locks, but few people use them. On 20 Oct 2026 DefiLlama counted 68 active addresses and 899 transactions on Mezo in 24 hours.
+
+The wallets, Telegram bots and websites that already have users get nothing for sending them to Mezo. Tigris has no integrator or referral fee, and aggregators like LI.FI don't support Mezo, so an app that routes a swap there can't earn from it or even prove it sent the user.
+
+## What Fuse does
+
 Fuse is a builder code router for Mezo. A wallet, bot or website sends its users' Mezo actions through `FuseRouter` and gets credit for each one. A builder can charge a fee of up to 0.50%, which the user approves first. Fuse never holds funds and has no token.
 
 The hosted app is live at [fuse.vercel.app](https://fuse.vercel.app/). The current release targets Mezo testnet only, chain ID `31611`.
@@ -108,7 +116,8 @@ fuse/
 ├── docs/           Architecture diagrams and project notes
 ├── contracts/      Foundry project: FuseRouter, deploy script, unit, fuzz and fork tests
 ├── packages/sdk/   mezo-fuse: FuseClient, quotes, MUSD permit, oracle, leaderboard indexer, x402
-└── apps/web/       @fuse/web: Next.js app with the widget, builders console, leaderboard, docs and APIs
+├── apps/web/       @fuse/web: Next.js app with the widget, builders console, leaderboard, docs and APIs
+└── apps/demo-builder/  Stack, a reference builder app that embeds the hosted widget
 ```
 
 ## Run it locally
