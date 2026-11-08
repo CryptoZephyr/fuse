@@ -444,6 +444,14 @@ export const fuseRouterAbi = [
   { type: "error", name: "ApprovalFailed", inputs: [] },
 ] as const;
 
+export const tigrisRouterErrorsAbi = [
+  {
+    type: "error",
+    name: "InsufficientOutputAmount",
+    inputs: [],
+  },
+] as const;
+
 export const tigrisRouterAbi = [
   {
     type: "function",

@@ -41,6 +41,7 @@ import {
   getSwapQuote,
   mapActionCodeToType,
   fuseRouterAbi,
+  tigrisRouterErrorsAbi,
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
   parseBuilderMetadataURI,
@@ -605,6 +606,55 @@ describe("mezo-fuse unit tests", () => {
       expect(estimateGas).not.toHaveBeenCalled();
       expect(decodeFuseError(revert).code).toBe("BUILDER_NOT_REGISTERED");
     }
+  });
+
+  it("decodes Tigris no-argument slippage reverts from viem errors", () => {
+    const account =
+      "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0" as Address;
+    const callArguments = {
+      account,
+      to: MEZO_TESTNET_ADDRESSES.fuseRouter,
+      data: "0x1234" as const,
+    };
+    const tigrisRevertData = "0x42301c23";
+    expect(
+      encodeErrorResult({
+        abi: tigrisRouterErrorsAbi,
+        errorName: "InsufficientOutputAmount",
+      }),
+    ).toBe(tigrisRevertData);
+
+    const tigrisRevert = new CallExecutionError(
+      new ExecutionRevertedError({
+        cause: Object.assign(new Error("execution reverted"), {
+          data: tigrisRevertData,
+        }) as any,
+        message: "execution reverted",
+      }),
+      callArguments,
+    );
+    expect(decodeFuseError(tigrisRevert).code).toBe("SLIPPAGE_EXCEEDED");
+  });
+
+  it("decodes the FuseRouter slippage revert selector", () => {
+    const account =
+      "0xB3d77D3058ee580bD28ba9C4b69281424f7E7F0" as Address;
+    const callArguments = {
+      account,
+      to: MEZO_TESTNET_ADDRESSES.fuseRouter,
+      data: "0x1234" as const,
+    };
+    const fuseRouterRevertData = encodeErrorResult({
+      abi: fuseRouterAbi,
+      errorName: "InsufficientOutputAmount",
+      args: [parseUnits("1", 18), parseUnits("2", 18)],
+    });
+    expect(fuseRouterRevertData.slice(0, 10)).toBe("0xd28d3eb5");
+    const fuseRouterRevert = new CallExecutionError(
+      new RawContractError({ data: fuseRouterRevertData }),
+      callArguments,
+    );
+    expect(decodeFuseError(fuseRouterRevert).code).toBe("SLIPPAGE_EXCEEDED");
   });
 
   it("does not send when transaction simulation is unavailable", async () => {

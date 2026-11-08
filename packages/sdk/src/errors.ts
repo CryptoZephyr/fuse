@@ -5,7 +5,7 @@ import {
   type Hash,
   type Hex,
 } from "viem";
-import { fuseRouterAbi } from "./abis.js";
+import { fuseRouterAbi, tigrisRouterErrorsAbi } from "./abis.js";
 
 export class FuseTransactionRevertedError extends Error {
   readonly txHash: Hash;
@@ -195,15 +195,21 @@ export function decodeFuseError(error: unknown): DecodedFuseError {
   const rawData = extractRevertData(error);
   const rawHexMatch = rawData ?? msg.match(/0x[0-9a-fA-F]{8,}/)?.[0];
   if (rawHexMatch) {
-    try {
-      const decoded = decodeErrorResult({
-        abi: fuseRouterAbi,
-        data: rawHexMatch as Hex,
-      });
-      const mapped = mapContractErrorName(decoded.errorName, decoded.args ?? [], error);
-      if (mapped) return mapped;
-    } catch {
-      // Ignore if not a FuseRouter custom error
+    for (const abi of [fuseRouterAbi, tigrisRouterErrorsAbi]) {
+      try {
+        const decoded = decodeErrorResult({
+          abi,
+          data: rawHexMatch as Hex,
+        });
+        const mapped = mapContractErrorName(
+          decoded.errorName,
+          decoded.args ?? [],
+          error,
+        );
+        if (mapped) return mapped;
+      } catch {
+        // Ignore if this ABI does not contain the revert selector
+      }
     }
   }
 
