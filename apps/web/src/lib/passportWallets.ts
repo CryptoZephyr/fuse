@@ -18,10 +18,18 @@ export function withRainbowKitDetails(
       },
       createConnector: (walletDetails) => {
         const connectorFn = wallet.createConnector(walletDetails);
-        return createConnector((config) => ({
-          ...connectorFn(config),
-          ...walletDetails,
-        }));
+        return createConnector((config) => {
+          const connector = connectorFn(config);
+          return {
+            ...connector,
+            ...walletDetails,
+            rkDetails: {
+              ...walletDetails.rkDetails,
+              name: connector.name,
+              iconUrl: connector.icon ?? walletDetails.rkDetails.iconUrl,
+            },
+          };
+        });
       },
     };
   };

@@ -18,6 +18,7 @@ import { maxSpendable } from "../src/lib/gasReserve";
 import { withRainbowKitDetails } from "../src/lib/passportWallets";
 
 type CreateWalletFn = WalletList[number]["wallets"][number];
+const unisatConnectorIcon = "data:image/png;base64,dW5pc2F0";
 
 const unisatWalletFactory: CreateWalletFn = () => ({
   id: "orangekit-unisat",
@@ -29,7 +30,10 @@ const unisatWalletFactory: CreateWalletFn = () => ({
     desktop: "https://example.com/unisat",
   },
   createConnector: () => (_config) =>
-    ({} as ReturnType<CreateConnectorFn>),
+    ({
+      name: "Unisat",
+      icon: unisatConnectorIcon,
+    } as ReturnType<CreateConnectorFn>),
 });
 
 function createUnisatConnector(unisat: object | undefined) {
@@ -116,6 +120,8 @@ describe("@fuse/web widget contract & constraint verification", () => {
         installed: false,
         groupName: "Bitcoin",
         isRainbowKitConnector: true,
+        name: "Unisat",
+        iconUrl: unisatConnectorIcon,
       },
     });
 
@@ -125,6 +131,8 @@ describe("@fuse/web widget contract & constraint verification", () => {
         installed: true,
         groupName: "Bitcoin",
         isRainbowKitConnector: true,
+        name: "Unisat",
+        iconUrl: unisatConnectorIcon,
       },
     });
   });
