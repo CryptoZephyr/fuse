@@ -146,6 +146,17 @@ describe("mezo-fuse unit tests", () => {
       }),
     ).toBeNull();
     expect(
+      parseFuseWidgetMessage({
+        source: FUSE_WIDGET_MESSAGE_SOURCE,
+        version: 1,
+        type: "tx_submitted",
+        hash: `0x${"a".repeat(64)}`,
+        kind: "action",
+        action: "swap",
+        explorerUrl: "javascript:alert(1)",
+      }),
+    ).toBeNull();
+    expect(
       parseFuseWidgetMessage({ ...validAccount, address: "0x1234" }),
     ).toBeNull();
     expect(

@@ -86,7 +86,7 @@ export function parseFuseWidgetMessage(data: unknown): FuseWidgetMessage | null 
       typeof data.action !== "string" ||
       !ACTION_TYPES.includes(data.action as FuseActionType) ||
       typeof data.explorerUrl !== "string" ||
-      data.explorerUrl.length === 0
+      !data.explorerUrl.startsWith("https://")
     ) {
       return null;
     }
