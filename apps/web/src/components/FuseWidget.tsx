@@ -15,7 +15,7 @@ import {
   shortenAddress,
 } from "mezo-fuse";
 import { useFuseWidget } from "../hooks/useFuseWidget";
-import { postToHost } from "../lib/hostMessages";
+import { isCrossOriginFrame, postToHost } from "../lib/hostMessages";
 import { FuseLogoMark } from "./FuseLogo";
 import {
   BuilderRatingPlate,
@@ -114,6 +114,13 @@ export function FuseWidget({
   });
 
   const [keptCapNotice, setKeptCapNotice] = useState<boolean>(false);
+  const [embedded, setEmbedded] = useState(false);
+  const [widgetUrl, setWidgetUrl] = useState("");
+
+  useEffect(() => {
+    setEmbedded(isCrossOriginFrame());
+    setWidgetUrl(window.location.href);
+  }, []);
 
   useEffect(() => {
     const section = widgetSectionRef.current;
@@ -595,6 +602,22 @@ export function FuseWidget({
               style={{ fontSize: "12px", color: "#4E535A" }}
             >
               Connect a Bitcoin or EVM wallet to continue.
+              {embedded && (
+                <>
+                  <br />
+                  Bitcoin wallet not opening?{" "}
+                  <a
+                    href={widgetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-fuse-action="open-new-tab"
+                    className="fuse-mono"
+                    style={{ fontSize: "12px" }}
+                  >
+                    Open Fuse in a new tab
+                  </a>
+                </>
+              )}
             </p>
           )}
 

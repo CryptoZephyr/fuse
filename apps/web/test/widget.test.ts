@@ -15,6 +15,7 @@ import {
   parseBuilderMetadataURI,
 } from "mezo-fuse";
 import { maxSpendable } from "../src/lib/gasReserve";
+import { isCrossOriginFrame } from "../src/lib/hostMessages";
 import { withRainbowKitDetails } from "../src/lib/passportWallets";
 
 type CreateWalletFn = WalletList[number]["wallets"][number];
@@ -62,6 +63,24 @@ function createUnisatConnector(unisat: object | undefined) {
     >[0];
 
     return wallet.createConnector(walletDetails)(config);
+  } finally {
+    if (previousWindow) {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
+}
+
+function withWindowStub<T>(windowValue: object, callback: () => T): T {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: windowValue,
+  });
+
+  try {
+    return callback();
   } finally {
     if (previousWindow) {
       Object.defineProperty(globalThis, "window", previousWindow);
@@ -135,5 +154,42 @@ describe("@fuse/web widget contract & constraint verification", () => {
         iconUrl: unisatConnectorIcon,
       },
     });
+  });
+
+  it("returns false when the widget is not framed", () => {
+    const windowStub: { location: { origin: string }; parent?: object } = {
+      location: { origin: "https://widget.example" },
+    };
+    windowStub.parent = windowStub;
+
+    expect(withWindowStub(windowStub, isCrossOriginFrame)).toBe(false);
+  });
+
+  it("returns false when the framed widget has a same-origin parent", () => {
+    const parentWindow = {
+      location: { origin: "https://widget.example" },
+    };
+    const windowStub = {
+      location: { origin: "https://widget.example" },
+      parent: parentWindow,
+      top: parentWindow,
+    };
+
+    expect(withWindowStub(windowStub, isCrossOriginFrame)).toBe(false);
+  });
+
+  it("returns true when access to the top frame location throws", () => {
+    const topWindow = Object.defineProperty({}, "location", {
+      get() {
+        throw new Error("Cross-origin access denied");
+      },
+    });
+    const windowStub = {
+      location: { origin: "https://widget.example" },
+      parent: {},
+      top: topWindow,
+    };
+
+    expect(withWindowStub(windowStub, isCrossOriginFrame)).toBe(true);
   });
 });
