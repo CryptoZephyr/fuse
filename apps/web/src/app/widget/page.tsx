@@ -16,8 +16,17 @@ function WidgetSurfaceContent() {
   ).toLowerCase();
   const defaultAction: FuseActionType =
     actionParam === "save" || actionParam === "lock" ? actionParam : "swap";
+  const txParam = searchParams.get("tx");
+  const initialTx =
+    txParam && /^0x[0-9a-fA-F]{64}$/.test(txParam) ? txParam : null;
 
-  return <DynamicFuseWidget builder={builderParam} defaultAction={defaultAction} />;
+  return (
+    <DynamicFuseWidget
+      builder={builderParam}
+      defaultAction={defaultAction}
+      initialTx={initialTx}
+    />
+  );
 }
 
 function WidgetSkeletonTicket() {
