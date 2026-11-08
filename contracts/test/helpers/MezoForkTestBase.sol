@@ -72,7 +72,9 @@ contract PrecompileBTCShim is IERC20 {
 
             // Dynamically query the live MUSD/BTC pool's BTC reserve at the forked block and seed the shim
             (uint256 btcReserve,) = ITigrisRouter(MezoTestnetAddresses.TIGRIS_ROUTER)
-                .getReserves(MezoTestnetAddresses.BTC, MezoTestnetAddresses.MUSD, false, MezoTestnetAddresses.POOL_FACTORY);
+                .getReserves(
+                    MezoTestnetAddresses.BTC, MezoTestnetAddresses.MUSD, false, MezoTestnetAddresses.POOL_FACTORY
+                );
             PrecompileBTCShim(MezoTestnetAddresses.BTC).mint(MezoTestnetAddresses.MUSD_BTC_POOL, btcReserve);
 
             PrecompileSkipOracleShim oracleShimTemplate = new PrecompileSkipOracleShim();
@@ -83,11 +85,13 @@ contract PrecompileBTCShim is IERC20 {
             PrecompileBTCShim(MezoTestnetAddresses.BTC).mint(to, amount);
         }
 
-        function _signMusdPermit(uint256 ownerPrivateKey, address owner, address spender, uint256 value, uint256 deadline)
-            internal
-            view
-            returns (uint8 v, bytes32 r, bytes32 s)
-        {
+        function _signMusdPermit(
+            uint256 ownerPrivateKey,
+            address owner,
+            address spender,
+            uint256 value,
+            uint256 deadline
+        ) internal view returns (uint8 v, bytes32 r, bytes32 s) {
             IERC20Permit musdPermit = IERC20Permit(MezoTestnetAddresses.MUSD);
             uint256 nonce = musdPermit.nonces(owner);
             bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonce, deadline));
