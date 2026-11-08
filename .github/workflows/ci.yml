@@ -17,10 +17,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
+      - name: Install Foundry from container image
+        run: |
+          docker pull ghcr.io/foundry-rs/foundry:stable
+          docker create --name foundry ghcr.io/foundry-rs/foundry:stable
+          mkdir -p "$HOME/.foundry/bin"
+          for bin in forge cast anvil; do
+            docker cp "foundry:/usr/local/bin/$bin" "$HOME/.foundry/bin/$bin"
+          done
+          docker rm foundry
+          echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+          "$HOME/.foundry/bin/forge" --version
 
       - name: Check Solidity formatting
         working-directory: contracts
