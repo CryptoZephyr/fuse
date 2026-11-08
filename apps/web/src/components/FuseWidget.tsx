@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatUnits } from "viem";
 import {
   type ExecutionStep,
+  FUSE_WIDGET_MESSAGE_SOURCE,
   type FuseActionType,
   LOCK_DURATION_PRESETS,
   MEZO_TESTNET_ADDRESSES,
@@ -14,6 +15,7 @@ import {
   shortenAddress,
 } from "mezo-fuse";
 import { useFuseWidget } from "../hooks/useFuseWidget";
+import { postToHost } from "../lib/hostMessages";
 import { FuseLogoMark } from "./FuseLogo";
 import {
   BuilderRatingPlate,
@@ -104,6 +106,7 @@ export function FuseWidget({
   defaultAction = "swap",
   initialTx,
 }: FuseWidgetProps) {
+  const widgetRootRef = useRef<HTMLElement | null>(null);
   const state = useFuseWidget({
     builderAddress: builder,
     defaultAction,
@@ -111,6 +114,48 @@ export function FuseWidget({
   });
 
   const [keptCapNotice, setKeptCapNotice] = useState<boolean>(false);
+
+  useEffect(() => {
+    const root = widgetRootRef.current;
+    if (!root || typeof ResizeObserver === "undefined") return;
+
+    let animationFrame = 0;
+    let pendingHeight: number | null = null;
+    let lastSentHeight: number | null = null;
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[entries.length - 1]?.contentRect.height;
+      if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) {
+        return;
+      }
+
+      pendingHeight = height;
+      if (animationFrame !== 0) return;
+
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0;
+        if (
+          pendingHeight === null ||
+          (lastSentHeight !== null && Math.abs(pendingHeight - lastSentHeight) < 1)
+        ) {
+          return;
+        }
+
+        lastSentHeight = pendingHeight;
+        postToHost({
+          source: FUSE_WIDGET_MESSAGE_SOURCE,
+          version: 1,
+          type: "resize",
+          height: Math.ceil(pendingHeight),
+        });
+      });
+    });
+
+    observer.observe(root);
+    return () => {
+      observer.disconnect();
+      if (animationFrame !== 0) window.cancelAnimationFrame(animationFrame);
+    };
+  }, []);
 
   const {
     accountAddress,
@@ -239,6 +284,7 @@ export function FuseWidget({
 
   return (
     <section
+      ref={widgetRootRef}
       aria-label="Fuse Mezo Builder Action Widget"
       data-fuse-surface="widget"
       className="fuse-widget-ticket"
