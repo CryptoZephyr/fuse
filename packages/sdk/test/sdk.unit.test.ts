@@ -555,7 +555,8 @@ describe("mezo-fuse unit tests", () => {
   });
 
   it("simulates before estimating gas and decodes router errors from viem call failures", async () => {
-    const account = "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0";
+    const account =
+      "0xB3d77D3058ee580bD28ba9C4b69281424f7eF7F0" as Address;
     const revertData = encodeErrorResult({
       abi: fuseRouterAbi,
       errorName: "BuilderNotRegistered",
@@ -573,7 +574,7 @@ describe("mezo-fuse unit tests", () => {
       new ExecutionRevertedError({
         cause: Object.assign(new Error("execution reverted"), {
           data: revertData,
-        }),
+        }) as any,
         message: "execution reverted",
       }),
       callArguments,
@@ -623,19 +624,22 @@ describe("mezo-fuse unit tests", () => {
       addresses: MEZO_TESTNET_ADDRESSES,
     });
 
-    const result = await client
-      .approveBuilder({
+    let thrown: unknown;
+    try {
+      await client.approveBuilder({
         builder: DEFAULT_PAID_BUILDER_TESTNET,
         maxFeeBps: 15,
-      })
-      .catch(decodeFuseError);
+      });
+    } catch (error) {
+      thrown = error;
+    }
 
-    expect(result).toMatchObject({
+    expect(thrown).toBeInstanceOf(FuseSimulationUnavailableError);
+    expect(decodeFuseError(thrown)).toMatchObject({
       code: "SIMULATION_UNAVAILABLE",
       message:
         "We couldn't check this transaction before opening your wallet. Nothing was sent. Try again.",
     });
-    expect(result.rawError).toBeInstanceOf(FuseSimulationUnavailableError);
     expect(sendTransaction).not.toHaveBeenCalled();
     expect(estimateGas).not.toHaveBeenCalled();
   });
