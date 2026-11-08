@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatUnits } from "viem";
 import {
@@ -106,6 +106,7 @@ export function FuseWidget({
   defaultAction = "swap",
   initialTx,
 }: FuseWidgetProps) {
+  const widgetSectionRef = useRef<HTMLElement | null>(null);
   const state = useFuseWidget({
     builderAddress: builder,
     defaultAction,
@@ -115,21 +116,23 @@ export function FuseWidget({
   const [keptCapNotice, setKeptCapNotice] = useState<boolean>(false);
 
   useEffect(() => {
-    const documentRoot = document.documentElement;
-    const documentBody = document.body;
-    if (!documentRoot || !documentBody || typeof ResizeObserver === "undefined") {
-      return;
-    }
+    const section = widgetSectionRef.current;
+    if (!section || typeof ResizeObserver === "undefined") return;
+    const main = section.closest("main");
 
     let animationFrame = 0;
     let pendingHeight: number | null = null;
     let lastSentHeight: number | null = null;
-    const observer = new ResizeObserver(() => {
-      const height = Math.max(
-        documentRoot.scrollHeight,
-        documentBody.scrollHeight,
+    const measureHeight = () => {
+      const paddingBottom = main
+        ? Number.parseFloat(getComputedStyle(main).paddingBottom || "0") || 0
+        : 0;
+      const height = Math.ceil(
+        section.getBoundingClientRect().bottom +
+          window.scrollY +
+          paddingBottom,
       );
-      if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) {
+      if (!Number.isFinite(height) || height <= 0) {
         return;
       }
 
@@ -150,13 +153,15 @@ export function FuseWidget({
           source: FUSE_WIDGET_MESSAGE_SOURCE,
           version: 1,
           type: "resize",
-          height: Math.ceil(pendingHeight),
+          height: pendingHeight,
         });
       });
-    });
+    };
+    const observer = new ResizeObserver(measureHeight);
 
-    observer.observe(documentRoot);
-    observer.observe(documentBody);
+    observer.observe(section);
+    if (main) observer.observe(main);
+    measureHeight();
     return () => {
       observer.disconnect();
       if (animationFrame !== 0) window.cancelAnimationFrame(animationFrame);
@@ -290,6 +295,7 @@ export function FuseWidget({
 
   return (
     <section
+      ref={widgetSectionRef}
       aria-label="Fuse Mezo Builder Action Widget"
       data-fuse-surface="widget"
       className="fuse-widget-ticket"
