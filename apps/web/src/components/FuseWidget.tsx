@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatUnits } from "viem";
 import {
@@ -106,7 +106,6 @@ export function FuseWidget({
   defaultAction = "swap",
   initialTx,
 }: FuseWidgetProps) {
-  const widgetRootRef = useRef<HTMLElement | null>(null);
   const state = useFuseWidget({
     builderAddress: builder,
     defaultAction,
@@ -116,14 +115,20 @@ export function FuseWidget({
   const [keptCapNotice, setKeptCapNotice] = useState<boolean>(false);
 
   useEffect(() => {
-    const root = widgetRootRef.current;
-    if (!root || typeof ResizeObserver === "undefined") return;
+    const documentRoot = document.documentElement;
+    const documentBody = document.body;
+    if (!documentRoot || !documentBody || typeof ResizeObserver === "undefined") {
+      return;
+    }
 
     let animationFrame = 0;
     let pendingHeight: number | null = null;
     let lastSentHeight: number | null = null;
-    const observer = new ResizeObserver((entries) => {
-      const height = entries[entries.length - 1]?.contentRect.height;
+    const observer = new ResizeObserver(() => {
+      const height = Math.max(
+        documentRoot.scrollHeight,
+        documentBody.scrollHeight,
+      );
       if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) {
         return;
       }
@@ -150,7 +155,8 @@ export function FuseWidget({
       });
     });
 
-    observer.observe(root);
+    observer.observe(documentRoot);
+    observer.observe(documentBody);
     return () => {
       observer.disconnect();
       if (animationFrame !== 0) window.cancelAnimationFrame(animationFrame);
@@ -284,7 +290,6 @@ export function FuseWidget({
 
   return (
     <section
-      ref={widgetRootRef}
       aria-label="Fuse Mezo Builder Action Widget"
       data-fuse-surface="widget"
       className="fuse-widget-ticket"
