@@ -101,6 +101,14 @@ function describeExecutionStep(
  * - Single-line electrical wiring split schematic & dotted leader-line receipt
  * - Plain user-facing copy and 320px–440px responsive ticket frame
  */
+function withAction(href: string, action: FuseActionType): string {
+  if (!href) return href;
+  const url = new URL(href);
+  url.searchParams.set("action", action);
+  url.searchParams.delete("tab");
+  return url.toString();
+}
+
 export function FuseWidget({
   builder,
   defaultAction = "swap",
@@ -607,7 +615,7 @@ export function FuseWidget({
                   <br />
                   Bitcoin wallet not opening?{" "}
                   <a
-                    href={widgetUrl}
+                    href={withAction(widgetUrl, state.activeTab)}
                     target="_blank"
                     rel="noopener noreferrer"
                     data-fuse-action="open-new-tab"
