@@ -40,6 +40,7 @@ import {
   isBitcoinSmartAccountWallet,
   isTaprootAddress,
 } from "mezo-fuse";
+import { useReportBtcPrice } from "../lib/btcPriceContext";
 import {
   calculateBtcGasReserve,
   maxSpendable,
@@ -171,6 +172,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
   const [builderStatus, setBuilderStatus] = useState<BuilderStatus | null>(null);
   const [builderLoading, setBuilderLoading] = useState<boolean>(true);
   const [btcUsdPrice, setBtcUsdPrice] = useState<BtcUsdOraclePrice | null>(null);
+  const reportBtcPrice = useReportBtcPrice();
   const [balances, setBalances] = useState<TokenBalances>({
     BTC: 0n,
     MUSD: 0n,
@@ -257,6 +259,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
         ]);
       setBuilderStatus(status);
       setBtcUsdPrice(oraclePrice);
+      if (oraclePrice) reportBtcPrice(oraclePrice);
 
       if (btcBal !== null && musdBal !== null && mezoBal !== null && smusdBal !== null) {
         setBalances({
@@ -278,6 +281,7 @@ export function useFuseWidget(options: UseFuseWidgetOptions = {}) {
     fuseClient,
     isValidBuilderAddress,
     publicClient,
+    reportBtcPrice,
   ]);
 
   useEffect(() => {

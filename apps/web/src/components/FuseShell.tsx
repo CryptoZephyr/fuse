@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPublicClient, http } from "viem";
 import {
+  type BtcUsdOraclePrice,
   DEFAULT_PAID_BUILDER_TESTNET,
   FuseClient,
   MEZO_TESTNET_ADDRESSES,
@@ -16,6 +17,7 @@ import {
 } from "mezo-fuse";
 import { FuseLogoMark, FuseLogoSilhouette } from "./FuseLogo";
 import { FuseWalletControl } from "./SwitchgearPrimitives";
+import { BtcPriceReportContext } from "../lib/btcPriceContext";
 
 export interface FuseShellProps {
   children: React.ReactNode;
@@ -63,7 +65,16 @@ export function FuseShell({
     };
   }, [btcUsdFormatted]);
 
-  const activeBtcPrice = btcUsdFormatted ?? fetchedBtcPrice;
+  // A widget on the page reports each fresh oracle reading here, so the header and the
+  // widget always show the same round instead of two prices fetched at different times.
+  const [reportedBtcPrice, setReportedBtcPrice] = useState<BtcUsdOraclePrice | null>(null);
+  const reportBtcPrice = useCallback((price: BtcUsdOraclePrice) => {
+    setReportedBtcPrice((current) =>
+      current && current.roundId > price.roundId ? current : price,
+    );
+  }, []);
+
+  const activeBtcPrice = reportedBtcPrice?.formattedUsd ?? btcUsdFormatted ?? fetchedBtcPrice;
 
   const navItems = [
     {
@@ -94,6 +105,7 @@ export function FuseShell({
   ];
 
   return (
+    <BtcPriceReportContext.Provider value={reportBtcPrice}>
     <div
       style={{
         minHeight: "100vh",
@@ -203,7 +215,7 @@ export function FuseShell({
               <Link href="/builders">Builders</Link>
               <Link href="/me">My caps</Link>
               <a
-                href="https://github.com/toluwalase1/Fuse"
+                href="https://github.com/CryptoZephyr/fuse"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -232,5 +244,6 @@ export function FuseShell({
         </footer>
       )}
     </div>
+    </BtcPriceReportContext.Provider>
   );
 }
