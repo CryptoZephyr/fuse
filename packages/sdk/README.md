@@ -5,7 +5,7 @@ TypeScript SDK for [Fuse](https://github.com/CryptoZephyr/fuse), the builder cod
 ## Install
 
 ```sh
-npm install mezo-fuse@^0.1.1 viem
+npm install mezo-fuse@^0.1.2 viem
 ```
 
 ## Use the SDK
