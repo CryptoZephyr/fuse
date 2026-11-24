@@ -229,7 +229,7 @@ describe("mezo-fuse unit tests", () => {
     ]);
   });
 
-  it("preflights routed quotes against router state and vault share previews", async () => {
+  it("preflights routed quotes against router state", async () => {
     const amountIn = parseUnits("10", 18);
     const publicClient = {
       readContract: vi.fn().mockImplementation(
@@ -238,7 +238,6 @@ describe("mezo-fuse unit tests", () => {
           if (functionName === "paused") return false;
           if (functionName === "allowedInput") return true;
           if (functionName === "getAmountsOut") return [amountIn, parseUnits("0.0001", 18)];
-          if (functionName === "previewDeposit") return parseUnits("9.985", 18);
           if (functionName === "latestRoundData") return [1n, 81_000_00000000n, 0n, 0n, 0n];
           if (functionName === "decimals") return 8;
           throw new Error(`Unexpected read: ${functionName}`);

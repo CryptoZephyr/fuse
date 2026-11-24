@@ -1,5 +1,5 @@
 import { type Address, type PublicClient, formatUnits } from "viem";
-import { fuseRouterAbi, musdSavingsVaultAbi, tigrisRouterAbi } from "./abis.js";
+import { fuseRouterAbi, tigrisRouterAbi } from "./abis.js";
 import {
   BPS_DENOMINATOR,
   type FuseAddresses,
@@ -336,15 +336,9 @@ export async function getSaveQuote({
   const feeBps = Number(rawFeeBps);
   const { feeAmount, netAmount } = calculateBuilderFee(amountIn, feeBps);
 
-  const previewedShares = await publicClient
-    .readContract({
-      address: addresses.savingsVault,
-      abi: musdSavingsVaultAbi,
-      functionName: "previewDeposit",
-      args: [netAmount],
-    })
-    .catch(() => null);
-  const sharesOut = previewedShares ?? netAmount;
+  // The MUSD Savings Vault has no previewDeposit and mints sMUSD 1:1 for deposited MUSD,
+  // so the net amount after the builder fee is the exact share amount the user receives.
+  const sharesOut = netAmount;
 
   return {
     tokenIn: addresses.musd,
@@ -355,7 +349,7 @@ export async function getSaveQuote({
     feeAmount,
     netAmount,
     sharesOut,
-    sharesOutIsEstimated: previewedShares === null,
+    sharesOutIsEstimated: false,
     amountInUsd: estimateTokenUsdValue(addresses.musd, amountIn, btcUsdPrice, addresses),
     feeUsd: estimateTokenUsdValue(addresses.musd, feeAmount, btcUsdPrice, addresses),
     netAmountUsd: estimateTokenUsdValue(addresses.musd, netAmount, btcUsdPrice, addresses),
