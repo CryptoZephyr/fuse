@@ -227,7 +227,7 @@ window.addEventListener("message", (event) => {
 
 ### Use the SDK
 
-Install it with `npm install mezo-fuse@^0.1.1 viem`. The package is on npm as [`mezo-fuse`](https://www.npmjs.com/package/mezo-fuse).
+Install it with `npm install mezo-fuse@^0.1.2 viem`. The package is on npm as [`mezo-fuse`](https://www.npmjs.com/package/mezo-fuse).
 
 ```ts
 import { createPublicClient, http, parseUnits } from "viem";
